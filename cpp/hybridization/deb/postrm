@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+
+set -e
+
+rm /etc/ld.so.conf.d/cmake_template.conf
+ldconfig
+
+exit 0

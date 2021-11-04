@@ -1,0 +1,25 @@
+if (NOT @PROJECT_NAME@_@component@_FOUND)
+  include(CMakeFindDependencyMacro)
+  # Find the depencies that are finded in CMakeLists.txt (i.e. find_package(Foo 1.2.3 REQUIRED COMPONENTS bar)
+  #find_dependency(Foo 1.2.3)
+
+  # Specifiy other components of this project that this component depends on
+  set(_internal_deps
+    # bar
+    )
+
+  set(@PROJECT_NAME@_@component@_FOUND TRUE)
+
+  foreach (_comp ${_internal_deps})
+    message(CHECK_START "looking for ${_comp}")
+    include(${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@-${_comp}Config.cmake)
+    if (@PROJECT_NAME@_${_comp}_FOUND)
+      message(CHECK_PASS "found")
+    else ()
+      message(CHECK_FAIL "not found")
+      set(@PROJECT_NAME@_@component@_FOUND FALSE)
+    endif ()
+  endforeach ()
+
+  include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@-@component@Targets.cmake")
+endif ()

@@ -1,0 +1,11 @@
+#Ignore everything in this folder except for the following
+/*
+
+!.gitignore
+!inspectionProfiles/
+!vcs.xml
+!cmake.xml
+
+#CodeStyles is important, but I am setting it to be ignored so people don't
+#change the styling accidently.
+# !codeStyles/

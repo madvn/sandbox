@@ -1,0 +1,56 @@
+version: 0.2
+phases:
+  pre_build:
+    commands:
+      - GIT_COMMIT=$(git rev-parse --short HEAD)
+      - GIT_TAG=git-${GIT_COMMIT}
+      - GIT_BRANCH=${GIT_BRANCH:=$CODEBUILD_WEBHOOK_HEAD_REF}
+      - GIT_BRANCH=${GIT_BRANCH#refs/heads/}
+      - |
+        GIT_BRANCH=${GIT_BRANCH:=$(
+          for i in $(git branch -r | sed 's|origin/||'); do
+            if expr "$CODEBUILD_SOURCE_VERSION" : $i > /dev/null; then
+              echo $i
+              break
+            fi
+          done
+        )}
+      - GIT_BRANCH=${GIT_BRANCH?"Unable to determine git branch"}
+      - echo "Building ${GIT_BRANCH}(${GIT_COMMIT})"
+      - echo "Logging in to Amazon ECR..."
+      - docker login -u AWS -p `aws ecr get-login-password` "https://${IMAGE_REPO_URL}"
+      - docker login -u ${DOCKER_HUB_USER} -p ${DOCKER_HUB_PASSWORD}
+  build:
+    commands:
+      - |
+        DOCKER_BUILDKIT=1 docker build . \
+          --pull \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          --cache-from ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME} \
+          --cache-from ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG} \
+          --progress plain \
+          --tag ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG}
+      - docker push ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG}
+      - |
+        if [ -n "${GIT_BRANCH}" ]; then
+          docker tag ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG} ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_BRANCH}
+          docker push ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_BRANCH}
+        fi
+      - docker run --rm ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG}
+      - |
+        if expr "$GIT_BRANCH" : "$INSTALLER_BRANCH"; then
+          docker tag ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG} ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}
+          docker push ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}
+        fi
+  post_build:
+    commands:
+      - |
+        if expr "$GIT_BRANCH" : "$INSTALLER_BRANCH"; then
+          echo "Copying apt installer to s3..."
+          id=$(docker create ${IMAGE_REPO_URL}/${IMAGE_REPO_NAME}:${GIT_TAG})
+          docker cp $id:/app/build/.deb .
+          INSTALLER=$(cat .deb)
+          docker cp $id:/app/build/${INSTALLER} .
+          docker rm -v $id
+          aws s3 cp ${INSTALLER} ${INSTALLER_BUCKET_URL}/${INSTALLER}
+        fi
