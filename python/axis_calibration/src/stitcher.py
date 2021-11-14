@@ -1,6 +1,7 @@
 import json
 import os
 import glob
+import sys
 
 import yaml
 
@@ -16,12 +17,12 @@ def invert_tf(T):
 
 
 def make_T_from_xyz_xyzw(xyz, xyzw, invert=False):
-    rot_mat = R.from_quat(xyzw).as_dcm()
+    rot_mat = R.from_quat(xyzw).as_matrix()
     return make_T_from_xyz_rotmat(xyz, rot_mat, invert)
 
 
 def make_T_from_xyz_rpy(xyz, rpy, invert=False):
-    rot_mat = R.from_euler("xyz", rpy).as_dcm()
+    rot_mat = R.from_euler("xyz", rpy).as_matrix()
     return make_T_from_xyz_rotmat(xyz, rot_mat, invert)
 
 
@@ -126,6 +127,58 @@ def manual_stitch_clouds_Ben(base_dir, section_cloud_files, section_tf_files):
         composite_cloud += section_cloud_tfed
 
     o3d.visualization.draw_geometries([composite_cloud])
+    with open(os.path.join(base_dir, "transforms.json"), "w") as f:
+        json.dump(transforms, f, indent=4)
+
+
+def manual_stitch_clouds_Insik3(base_dir, section_cloud_files, section_tf_files):
+    """
+    read section clouds and manually stitch them using tfs that are saved out
+    # FRAMES:
+    #     R - scanning robot base
+    #     S - scanner primary
+    #     C - Carriage flange
+    #     B - Carriage positioner base
+    #     A - Positioner theta=0
+    """
+
+    assert len(section_cloud_files) == len(section_tf_files), "Mismatch in length of cloud files and tf files"
+    composite_cloud = o3d.geometry.PointCloud()
+
+    transforms = {}
+
+    for cloud_file in section_cloud_files:
+        section_ind = int(cloud_file.split("_")[-1].split(".")[0])
+        transforms[str(section_ind)] = {}
+
+        tf_S_to_C = make_T_from_yaml(
+            os.path.join(base_dir, f"primary_cam_to_positioner_carriage_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["SL_to_carriage_flange"] = tf_S_to_C.tolist()
+
+        tf_C_to_B = make_T_from_yaml(
+            os.path.join(base_dir, f"positioner_carriage_to_positioner_base_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"] = {}
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"]["translation"] = tf_C_to_B[:3, -1].tolist()
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"]["rotation"] = tf_C_to_B[:3, :3].tolist()
+
+        section_cloud = o3d.io.read_point_cloud(os.path.join(base_dir, cloud_file))
+        section_cloud = section_cloud.transform(tf_S_to_C @ tf_C_to_B)
+
+        section_tf = make_T_from_yaml(
+            os.path.join(base_dir, f"positioner_base_to_positioner_tool_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["positioner_base_to_tool0"] = {}
+        transforms[str(section_ind)]["positioner_base_to_tool0"]["translation"] = section_tf[:3, -1].tolist()
+        transforms[str(section_ind)]["positioner_base_to_tool0"]["rotation"] = section_tf[:3, :3].tolist()
+
+        section_cloud_tfed = section_cloud.transform(section_tf)  # to positioner frame
+        section_cloud_tfed.paint_uniform_color(np.random.rand(3))
+        composite_cloud += section_cloud_tfed
+
+    o3d.visualization.draw_geometries([composite_cloud])
+    o3d.io.write_point_cloud(os.path.join(base_dir, "manually_stitched.ply"), composite_cloud)
     with open(os.path.join(base_dir, "transforms.json"), "w") as f:
         json.dump(transforms, f, indent=4)
 
@@ -246,7 +299,7 @@ def manual_stitch_clouds(base_dir, section_cloud_files, section_tf_files):
         section_ind = int(cloud_file.split("_")[-1].split(".")[0])  # account for positioenr rot
         section_theta = -np.pi + section_ind * (2 * np.pi / len(section_cloud_files))
         tf_theta = np.eye(4)
-        tf_theta[:3, :3] = R.from_rotvec([0, 0, section_theta]).as_dcm()
+        tf_theta[:3, :3] = R.from_rotvec([0, 0, section_theta]).as_matrix()
         section_tf = section_tf_0 @ tf_theta
 
         section_cloud = o3d.io.read_point_cloud(os.path.join(base_dir, cloud_file))
@@ -258,6 +311,9 @@ def manual_stitch_clouds(base_dir, section_cloud_files, section_tf_files):
 
 
 def make_section_clouds_Insik(base_dir, transformed_cloud_files, section_tf_files):
+    """
+    read all transformed clouds, apply inverse of section_tf to them, and save as section_cloud
+    """
     assert len(transformed_cloud_files) == len(section_tf_files), "Mismatch in length of cloud files and tf files"
     composite_cloud = o3d.geometry.PointCloud()
 
@@ -291,198 +347,24 @@ def stitch_section_clouds_Ben(base_dir, section_cloud_files, section_tf_files):
 
 
 if __name__ == "__main__":
-    base_dir = "/home/madhavun/data/Valmont/valmontCell/3_30_2_1635454531169"
-    section_cloud_files = [
-        "section_cloud_1.ply",
-        "section_cloud_2.ply",
-        "section_cloud_3.ply",
-        "section_cloud_4.ply",
-        "section_cloud_0.ply",
-        "section_cloud_5.ply",
-        "section_cloud_6.ply",
-        "section_cloud_7.ply",
-        "section_cloud_8.ply",
-        "section_cloud_9.ply",
-    ]
-    section_tf_files = [
-        "section_cloud_tf_0.yaml",
-        "section_cloud_tf_65536.yaml",
-        "section_cloud_tf_131072.yaml",
-        "section_cloud_tf_196608.yaml",
-        "section_cloud_tf_262144.yaml",
-        "section_cloud_tf_327680.yaml",
-        "section_cloud_tf_393216.yaml",
-        "section_cloud_tf_458752.yaml",
-        "section_cloud_tf_524288.yaml",
-        "section_cloud_tf_589824.yaml",
-    ]
+    # base_dir = "/home/madhavun/data/Valmont/z_offset/4_38_2_1636738715861"
+    base_dir = sys.argv[1]
 
-    # base_dir = "/home/madhavun/data/Valmont/valmontCell/8_213_2_1636067775852/"
-    base_dir = "/home/madhavun/data/Valmont/valmontCell/8_258_2_1636237067045/"
-    section_cloud_files = [
-        "section_cloud_0.ply",
-        "section_cloud_1.ply",
-        "section_cloud_2.ply",
-        "section_cloud_3.ply",
-        "section_cloud_4.ply",
-        "section_cloud_5.ply",
-        "section_cloud_6.ply",
-        "section_cloud_7.ply",
-        "section_cloud_8.ply",
-        "section_cloud_9.ply",
-        "section_cloud_10.ply",
-        "section_cloud_11.ply",
-        "section_cloud_12.ply",
-        "section_cloud_13.ply",
-        "section_cloud_14.ply",
-        "section_cloud_15.ply",
-    ]
-    section_tf_files = [
-        "section_cloud_tf_0.yaml",
-        "section_cloud_tf_65536.yaml",
-        "section_cloud_tf_131072.yaml",
-        "section_cloud_tf_196608.yaml",
-        "section_cloud_tf_262144.yaml",
-        "section_cloud_tf_327680.yaml",
-        "section_cloud_tf_393216.yaml",
-        "section_cloud_tf_458752.yaml",
-        "section_cloud_tf_524288.yaml",
-        "section_cloud_tf_589824.yaml",
-        "section_cloud_tf_655360.yaml",
-        "section_cloud_tf_720896.yaml",
-        "section_cloud_tf_786432.yaml",
-        "section_cloud_tf_851968.yaml",
-        "section_cloud_tf_917504.yaml",
-        "section_cloud_tf_983040.yaml",
-    ]
+    # find and sort transformed cloud files
+    transformed_cloud_files = glob.glob(os.path.join(base_dir, "transformed_cloud_*.ply"))
+    transformed_cloud_files = sorted(transformed_cloud_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-4]))
 
-    # base_dir = "/home/madhavun/data/Valmont/valmontCell/y_offset_0.02"
-    # section_cloud_files = [
-    #     "section_cloud_0.ply",
-    #     "section_cloud_1.ply",
-    #     "section_cloud_2.ply",
-    #     "section_cloud_3.ply",
-    #     "section_cloud_4.ply",
-    #     "section_cloud_5.ply",
-    #     "section_cloud_6.ply",
-    #     "section_cloud_7.ply",
-    #     "section_cloud_8.ply",
-    #     "section_cloud_9.ply",
-    # ]
-    # section_tf_files = [
-    #     "section_cloud_tf_0.yaml",
-    #     "section_cloud_tf_65536.yaml",
-    #     "section_cloud_tf_131072.yaml",
-    #     "section_cloud_tf_196608.yaml",
-    #     "section_cloud_tf_262144.yaml",
-    #     "section_cloud_tf_327680.yaml",
-    #     "section_cloud_tf_393216.yaml",
-    #     "section_cloud_tf_458752.yaml",
-    #     "section_cloud_tf_524288.yaml",
-    #     "section_cloud_tf_589824.yaml",
-    # ]
+    # find and sort section tf files
+    section_tf_files = glob.glob(os.path.join(base_dir, "section_cloud_tf_*.yaml"))
+    section_tf_files = sorted(section_tf_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-5]))
+    section_tf_files = section_tf_files[::2]
 
-    # base_dir = "/home/madhavun/data/Valmont/valmontCell/22_295_2_1636564143165/"
-    # section_cloud_files = [
-    #     "section_cloud_0.ply",
-    #     "section_cloud_1.ply",
-    #     "section_cloud_2.ply",
-    #     "section_cloud_3.ply",
-    #     "section_cloud_4.ply",
-    #     "section_cloud_5.ply",
-    #     "section_cloud_6.ply",
-    #     "section_cloud_7.ply",
-    #     "section_cloud_8.ply",
-    #     "section_cloud_9.ply",
-    # ]
-    # section_tf_files = [
-    #     "section_cloud_tf_0.yaml",
-    #     "section_cloud_tf_65536.yaml",
-    #     "section_cloud_tf_131072.yaml",
-    #     "section_cloud_tf_196608.yaml",
-    #     "section_cloud_tf_262144.yaml",
-    #     "section_cloud_tf_327680.yaml",
-    #     "section_cloud_tf_393216.yaml",
-    #     "section_cloud_tf_458752.yaml",
-    #     "section_cloud_tf_524288.yaml",
-    #     "section_cloud_tf_589824.yaml",
-    # ]
+    # make names of section clouds
+    section_cloud_files = [f.replace("transformed_cloud", "section_cloud") for f in transformed_cloud_files]
 
-    base_dir = "/home/madhavun/data/Valmont/valmontCell/z_offsets/4_24_2_1636703828840"
-    # base_dir = "/home/madhavun/data/Valmont/valmontCell/z_offsets/4_27_2_1636708143345"
-    transformed_cloud_files = [
-        "transformed_cloud_0.ply",
-        "transformed_cloud_1.ply",
-        "transformed_cloud_2.ply",
-        "transformed_cloud_3.ply",
-        "transformed_cloud_4.ply",
-        "transformed_cloud_5.ply",
-        "transformed_cloud_6.ply",
-        "transformed_cloud_7.ply",
-        "transformed_cloud_8.ply",
-        "transformed_cloud_9.ply",
-        "transformed_cloud_10.ply",
-        "transformed_cloud_11.ply",
-        "transformed_cloud_12.ply",
-        "transformed_cloud_13.ply",
-        "transformed_cloud_14.ply",
-        "transformed_cloud_15.ply",
-        "transformed_cloud_16.ply",
-        "transformed_cloud_17.ply",
-        "transformed_cloud_18.ply",
-        "transformed_cloud_19.ply",
-    ]
-    section_cloud_files = [
-        "section_cloud_0.ply",
-        "section_cloud_1.ply",
-        "section_cloud_2.ply",
-        "section_cloud_3.ply",
-        "section_cloud_4.ply",
-        "section_cloud_5.ply",
-        "section_cloud_6.ply",
-        "section_cloud_7.ply",
-        "section_cloud_8.ply",
-        "section_cloud_9.ply",
-        "section_cloud_10.ply",
-        "section_cloud_11.ply",
-        "section_cloud_12.ply",
-        "section_cloud_13.ply",
-        "section_cloud_14.ply",
-        "section_cloud_15.ply",
-        "section_cloud_16.ply",
-        "section_cloud_17.ply",
-        "section_cloud_18.ply",
-        "section_cloud_19.ply",
-    ]
-    section_tf_files = [
-        "section_cloud_tf_0.yaml",
-        "section_cloud_tf_65536.yaml",
-        "section_cloud_tf_131072.yaml",
-        "section_cloud_tf_196608.yaml",
-        "section_cloud_tf_262144.yaml",
-        "section_cloud_tf_327680.yaml",
-        "section_cloud_tf_393216.yaml",
-        "section_cloud_tf_458752.yaml",
-        "section_cloud_tf_524288.yaml",
-        "section_cloud_tf_589824.yaml",
-        "section_cloud_tf_655360.yaml",
-        "section_cloud_tf_720896.yaml",
-        "section_cloud_tf_786432.yaml",
-        "section_cloud_tf_851968.yaml",
-        "section_cloud_tf_917504.yaml",
-        "section_cloud_tf_983040.yaml",
-        "section_cloud_tf_1048576.yaml",
-        "section_cloud_tf_1114112.yaml",
-        "section_cloud_tf_1179648.yaml",
-        "section_cloud_tf_1245184.yaml",
-    ]
-
-    # T = make_T_from_yaml("/home/madhavun/data/Valmont/valmontCell/3_30_2_1635454531169/section_cloud_tf_65536.yaml")
-    # print(T)
-
-    # make_section_clouds_Insik(base_dir, transformed_cloud_files, section_tf_files)
+    make_section_clouds_Insik(base_dir, transformed_cloud_files, section_tf_files)
     # stitch_section_clouds_Ben(base_dir, section_cloud_files, section_tf_files)
 
     # manual_stitch_clouds_Ben(base_dir, section_cloud_files, section_tf_files)
-    manual_stitch_clouds_Insik(base_dir, section_cloud_files, section_tf_files)
+    manual_stitch_clouds_Insik3(base_dir, section_cloud_files, section_tf_files)
     # manual_stitch_clouds3(base_dir, section_cloud_files)
