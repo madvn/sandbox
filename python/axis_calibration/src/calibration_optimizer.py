@@ -247,27 +247,6 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         for n_epochs, train_mask in zip(num_epochs, vars_to_train):
             run_training_epochs(n_epochs, train_mask)
 
-        #############################################
-        # Log data after optimization
-        #############################################
-        fig, ax1 = plt.subplots(figsize=[4, 3])
-        color = "tab:red"
-        # ax1.plot(smoothen(ls, 20), label="Optim Loss", color=color, alpha=0.5)
-        ax1.plot(ls, label="Optim Loss", color=color, alpha=0.5)
-        ax1.set_ylabel("Optim loss", color=color)
-        ax1.tick_params(axis="y", labelcolor=color)
-
-        ax2 = ax1.twinx()
-        color = "tab:blue"
-        ax2.plot(als, label="Auxil Loss", color=color, alpha=0.5)
-        ax2.set_ylabel("Auxiliary Loss", color=color)
-        ax2.tick_params(axis="y", labelcolor=color)
-        ax2.set_xlabel("Time")
-
-        plt.tight_layout()
-        plt.savefig("optim.png")
-        # plt.show()
-
         result_xyz = list(sess.run([[C_to_B_tx_trainable, C_to_B_ty_trainable, C_to_B_tz_trainable]])[0])
         result_rpy = list(sess.run([C_to_B_rotx_trainable, C_to_B_roty_trainable, C_to_B_rotz_trainable]))
 
@@ -278,9 +257,6 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         res += "\n\n" + "##" * 5 + " After " + "##" * 5 + "\n"
         res += "Rot_rpy:{}".format(result_rpy) + "\n"
         res += "Translation:{}".format(result_xyz) + "\n"
-        # with open("res.txt", "w") as f:
-        #     f.write(res)
-        # print(res)
 
         #############################################
         # Stitch pcds after optimization and show
@@ -300,7 +276,7 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
             new_stitched_pcd += pcd1
 
     T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
-    return T, new_stitched_pcd
+    return ls, T, new_stitched_pcd
 
 def main(base_dir, output_dir, num_epochs, viz):
     #############################################
@@ -337,9 +313,30 @@ def main(base_dir, output_dir, num_epochs, viz):
     if viz:
         o3d.visualization.draw_geometries(pcds)
 
-    calibrated_T, new_stitched_pcd = optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE)
+    ls, calibrated_T, new_stitched_pcd = optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE)
 
     o3d.io.write_point_cloud(os.path.join(output_dir, "new_stitched_pcd.ply"), new_stitched_pcd)
+
+    #############################################
+    # Log data after optimization
+    #############################################
+    fig, ax1 = plt.subplots(figsize=[4, 3])
+    color = "tab:red"
+    # ax1.plot(smoothen(ls, 20), label="Optim Loss", color=color, alpha=0.5)
+    ax1.plot(ls, label="Optim Loss", color=color, alpha=0.5)
+    ax1.set_ylabel("Optim loss", color=color)
+    ax1.tick_params(axis="y", labelcolor=color)
+
+    ax2 = ax1.twinx()
+    color = "tab:blue"
+    ax2.plot(als, label="Auxil Loss", color=color, alpha=0.5)
+    ax2.set_ylabel("Auxiliary Loss", color=color)
+    ax2.tick_params(axis="y", labelcolor=color)
+    ax2.set_xlabel("Time")
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "optim.png"))
+    if viz: plt.show()
 
     print("\nInverted tf to use i.e. final results")
     res_txt = ""
