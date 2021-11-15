@@ -64,7 +64,7 @@ def read_transforms(base_dir):
     return transforms
 
 
-def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE, viz):
+def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = DEVICE[-1]
     config = tf.ConfigProto()
@@ -278,9 +278,9 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         res += "\n\n" + "##" * 5 + " After " + "##" * 5 + "\n"
         res += "Rot_rpy:{}".format(result_rpy) + "\n"
         res += "Translation:{}".format(result_xyz) + "\n"
-        with open("res.txt", "w") as f:
-            f.write(res)
-        print(res)
+        # with open("res.txt", "w") as f:
+        #     f.write(res)
+        # print(res)
 
         #############################################
         # Stitch pcds after optimization and show
@@ -299,19 +299,10 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
             pcd1.paint_uniform_color(np.random.rand(3))  # [0.8703, 0.3481, 0.3481]
             new_stitched_pcd += pcd1
 
-        o3d.io.write_point_cloud("new_stitched_pcd.ply", new_stitched_pcd)
+    T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
+    return T, new_stitched_pcd
 
-        print("\ninverted tf to use ")
-        T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
-        print("translation: {}".format(T[:3, -1].tolist()))
-        print("rotation xyzw: {}".format(R.from_dcm(T[:3, :3]).as_quat().tolist()))
-        print("rotation rpy: {}".format(R.from_dcm(T[:3, :3]).as_euler("xyz").tolist()))
-
-        if viz:
-            o3d.visualization.draw_geometries([new_stitched_pcd])
-
-
-def main(base_dir, num_epochs, viz):
+def main(base_dir, output_dir, num_epochs, viz):
     #############################################
     # setup
     #############################################
@@ -346,7 +337,21 @@ def main(base_dir, num_epochs, viz):
     if viz:
         o3d.visualization.draw_geometries(pcds)
 
-    optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE, viz)
+    calibrated_T, new_stitched_pcd = optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE)
+
+    o3d.io.write_point_cloud(os.path.join(output_dir, "new_stitched_pcd.ply"), new_stitched_pcd)
+
+    print("\nInverted tf to use i.e. final results")
+    res_txt = ""
+    res_txt += "translation: {}\n".format(calibrated_T[:3, -1].tolist())
+    res_txt += "rotation xyzw: {}\n".format(R.from_dcm(calibrated_T[:3, :3]).as_quat().tolist())
+    res_txt += "rotation rpy: {}".format(R.from_dcm(calibrated_T[:3, :3]).as_euler("xyz").tolist())
+    print(res_txt)
+    with open(os.path.join(output_dir, "results.txt"), "w") as f:
+        f.write(res_txt)
+
+    if viz:
+        o3d.visualization.draw_geometries([new_stitched_pcd])
 
 
 if __name__ == "__main__":
@@ -361,6 +366,15 @@ if __name__ == "__main__":
         default="/home/madhavun/data/Valmont/valmontCell/z_offsets/4_24_2_1636703828840",
         # default = "/home/madhavun/data/Valmont/valmontCell/z_offsets/4_27_2_1636708143345",
         dest="base_dir",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=str,
+        required=False,
+        help="path to store results in",
+        default="./",
+        dest="output_dir",
     )
     parser.add_argument(
         "-e",
@@ -381,4 +395,4 @@ if __name__ == "__main__":
         dest="viz",
     )
     args = parser.parse_args()
-    main(args.base_dir, args.num_epochs, args.viz)
+    main(args.base_dir, args.output_dir, args.num_epochs, args.viz)
