@@ -28,38 +28,67 @@ from scipy.spatial.transform import Rotation as R
 from tools import *
 
 
+def make_section_clouds_from_transformed_clouds(base_dir):
+    """
+    read all transformed clouds, apply inverse of section_tf to them, and save as section_cloud
+    """
+    # find and sort transformed cloud files
+    transformed_cloud_files = glob.glob(os.path.join(base_dir, "transformed_cloud_*.ply"))
+    transformed_cloud_files = sorted(transformed_cloud_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-4]))
+
+    # find and sort section tf files
+    section_tf_files = glob.glob(os.path.join(base_dir, "section_cloud_tf_*.yaml"))
+    section_tf_files = sorted(section_tf_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-5]))
+    section_tf_files = section_tf_files[::2]
+
+    assert len(transformed_cloud_files) == len(section_tf_files), "Mismatch in length of cloud files and tf files"
+    composite_cloud = o3d.geometry.PointCloud()
+
+    for cloud_file, tf_file in zip(transformed_cloud_files, section_tf_files):
+        section_ind = int(cloud_file.split("_")[-1][:-4])
+        section_cloud = o3d.io.read_point_cloud(os.path.join(base_dir, cloud_file))
+        tf = make_T_from_yaml(os.path.join(base_dir, tf_file))
+        section_cloud_tfed = section_cloud.transform(invert_tf(tf))
+        section_cloud_tfed.paint_uniform_color(np.random.rand(3))
+        # o3d.io.write_point_cloud(os.path.join(base_dir, "tf_" + cloud_file), section_cloud_tfed)
+        o3d.io.write_point_cloud(os.path.join(base_dir, "section_cloud_{}.ply".format(section_ind)), section_cloud_tfed)
+        composite_cloud += section_cloud_tfed
+
+
 def read_transforms(base_dir):
     """
     Read all necessary transform for axis calibration
     """
     section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
+    if len(section_cloud_files) == 0:
+        make_section_clouds_from_transformed_clouds(base_dir)
+        section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
     section_cloud_files.sort()
 
     transforms = {}
 
-    S_to_C_file = os.path.join(base_dir, "primary_cam_to_carriage_flange.yaml")
-    if os.path.exists(S_to_C_file):
-        tf_S_to_C = make_T_from_yaml(S_to_C_file, invert=True)
-    else:
-        tf_S_to_C = make_T_from_yaml(os.path.join(base_dir, "primary_cam_to_carriage_flange.yaml"), invert=True)
-
-    print("tf_S_to_C:\n", tf_S_to_C)
-    transforms["SL_to_carriage_flange"] = tf_S_to_C.tolist()
-
-    tf_C_to_B = make_T_from_yaml(os.path.join(base_dir, "carriage_flange_to_positioner_base.yaml"), invert=True)
-    print("tf_C_to_B:\n", tf_C_to_B)
-    transforms["carriage_flange_to_positioner_base"] = {}
-    transforms["carriage_flange_to_positioner_base"]["translation"] = tf_C_to_B[:3, -1].tolist()
-    transforms["carriage_flange_to_positioner_base"]["rotation"] = tf_C_to_B[:3, :3].tolist()
-
-    for section_ind in range(len(section_cloud_files)):
-        section_tf = make_T_from_yaml(
-            os.path.join(base_dir, "positioner_base_to_positioner_tool0_{}.yaml".format(section_ind)), invert=True
-        )
+    for cloud_file in section_cloud_files:
+        section_ind = int(cloud_file.split("_")[-1].split(".")[0])
         transforms[str(section_ind)] = {}
-        transforms[str(section_ind)]["flange_to_tool0"] = {}
-        transforms[str(section_ind)]["flange_to_tool0"]["translation"] = section_tf[:3, -1].tolist()
-        transforms[str(section_ind)]["flange_to_tool0"]["rotation"] = section_tf[:3, :3].tolist()
+
+        tf_S_to_C = make_T_from_yaml(
+            os.path.join(base_dir, f"primary_cam_to_positioner_carriage_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["SL_to_carriage_flange"] = tf_S_to_C.tolist()
+
+        tf_C_to_B = make_T_from_yaml(
+            os.path.join(base_dir, f"positioner_carriage_to_positioner_base_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"] = {}
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"]["translation"] = tf_C_to_B[:3, -1].tolist()
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"]["rotation"] = tf_C_to_B[:3, :3].tolist()
+
+        section_tf = make_T_from_yaml(
+            os.path.join(base_dir, f"positioner_base_to_positioner_tool_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["positioner_base_to_tool0"] = {}
+        transforms[str(section_ind)]["positioner_base_to_tool0"]["translation"] = section_tf[:3, -1].tolist()
+        transforms[str(section_ind)]["positioner_base_to_tool0"]["rotation"] = section_tf[:3, :3].tolist()
 
     return transforms
 
@@ -70,8 +99,8 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
-    C_to_B_t = transforms["carriage_flange_to_positioner_base"]["translation"]
-    C_to_B_r = R.from_dcm(transforms["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
+    C_to_B_t = transforms["0"]["carriage_flange_to_positioner_base"]["translation"]
+    C_to_B_r = R.from_dcm(transforms["0"]["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
 
     #############################################
     # Build computational graph for optimization
@@ -278,6 +307,7 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
     T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
     return ls, T, new_stitched_pcd
 
+
 def main(base_dir, output_dir, num_epochs, viz):
     #############################################
     # setup
@@ -297,14 +327,16 @@ def main(base_dir, output_dir, num_epochs, viz):
     # load in transforms for all scans i.e. base to tool0_theta for each scan
     transforms = read_transforms(base_dir)
 
+    # load scans and transform to carriage flange
     pts_data = []
     pcds = []
     for cloud_file in section_cloud_files:
+        section_ind = int(cloud_file.split("_")[-1].split(".")[0])
         c = np.random.rand(3)
         c /= np.linalg.norm(c)
         pcd = o3d.io.read_point_cloud(os.path.join(cloud_file)).paint_uniform_color(c)
         pcd = pcd.voxel_down_sample(0.01)
-        S_to_C = transforms["SL_to_carriage_flange"]
+        S_to_C = transforms[str(section_ind)]["SL_to_carriage_flange"]
         pcd = pcd.transform(S_to_C)
         pcds.append(pcd)
         pts_data.append(np.array(pcd.points))
@@ -313,13 +345,16 @@ def main(base_dir, output_dir, num_epochs, viz):
     if viz:
         o3d.visualization.draw_geometries(pcds)
 
+    #############################################
+    # Registration-based axis calibration
+    #############################################
     ls, calibrated_T, new_stitched_pcd = optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE)
 
+    #############################################
+    # Log results after optimization
+    #############################################
     o3d.io.write_point_cloud(os.path.join(output_dir, "new_stitched_pcd.ply"), new_stitched_pcd)
 
-    #############################################
-    # Log data after optimization
-    #############################################
     fig, ax1 = plt.subplots(figsize=[4, 3])
     color = "tab:red"
     # ax1.plot(smoothen(ls, 20), label="Optim Loss", color=color, alpha=0.5)
