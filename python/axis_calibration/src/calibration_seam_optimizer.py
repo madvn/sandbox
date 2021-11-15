@@ -66,7 +66,7 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
     config.gpu_options.allow_growth = True
 
     C_to_B_t = transforms["carriage_flange_to_positioner_base"]["translation"]
-    C_to_B_r = R.from_dcm(transforms["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
+    C_to_B_r = R.from_matrix(transforms["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
 
     #############################################
     # Build computational graph for optimization
@@ -299,8 +299,8 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         print("\ninverted tf to use ")
         T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
         print("translation: {}".format(T[:3, -1].tolist()))
-        print("rotation xyzw: {}".format(R.from_dcm(T[:3, :3]).as_quat().tolist()))
-        print("rotation rpy: {}".format(R.from_dcm(T[:3, :3]).as_euler("xyz").tolist()))
+        print("rotation xyzw: {}".format(R.from_matrix(T[:3, :3]).as_quat().tolist()))
+        print("rotation rpy: {}".format(R.from_matrix(T[:3, :3]).as_euler("xyz").tolist()))
 
         if viz:
             o3d.visualization.draw_geometries([new_stitched_pcd])

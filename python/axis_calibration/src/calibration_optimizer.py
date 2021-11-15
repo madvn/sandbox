@@ -100,7 +100,7 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
     config.gpu_options.allow_growth = True
 
     C_to_B_t = transforms["0"]["carriage_flange_to_positioner_base"]["translation"]
-    C_to_B_r = R.from_dcm(transforms["0"]["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
+    C_to_B_r = R.from_matrix(transforms["0"]["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
 
     #############################################
     # Build computational graph for optimization
@@ -320,12 +320,16 @@ def main(base_dir, output_dir, num_epochs, viz):
     # load data and transforms
     #############################################
     # base_dir = "/home/madhavun/data/Valmont/valmontCell/8_258_2_1636237067045/"
-    section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
-    section_cloud_files.sort()
-    print("\n".join(section_cloud_files))
+    #section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
+    #section_cloud_files.sort()
+    #print("\n".join(section_cloud_files))
 
     # load in transforms for all scans i.e. base to tool0_theta for each scan
     transforms = read_transforms(base_dir)
+
+    section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
+    section_cloud_files.sort()
+    print("\n".join(section_cloud_files))
 
     # load scans and transform to carriage flange
     pts_data = []
@@ -376,8 +380,8 @@ def main(base_dir, output_dir, num_epochs, viz):
     print("\nInverted tf to use i.e. final results")
     res_txt = ""
     res_txt += "translation: {}\n".format(calibrated_T[:3, -1].tolist())
-    res_txt += "rotation xyzw: {}\n".format(R.from_dcm(calibrated_T[:3, :3]).as_quat().tolist())
-    res_txt += "rotation rpy: {}".format(R.from_dcm(calibrated_T[:3, :3]).as_euler("xyz").tolist())
+    res_txt += "rotation xyzw: {}\n".format(R.from_matrix(calibrated_T[:3, :3]).as_quat().tolist())
+    res_txt += "rotation rpy: {}".format(R.from_matrix(calibrated_T[:3, :3]).as_euler("xyz").tolist())
     print(res_txt)
     with open(os.path.join(output_dir, "results.txt"), "w") as f:
         f.write(res_txt)

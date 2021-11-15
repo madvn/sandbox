@@ -10,12 +10,12 @@ def invert_tf(T):
 
 
 def make_T_from_xyz_xyzw(xyz, xyzw, invert=False):
-    rot_mat = R.from_quat(xyzw).as_dcm()
+    rot_mat = R.from_quat(xyzw).as_matrix()
     return make_T_from_xyz_rotmat(xyz, rot_mat, invert)
 
 
 def make_T_from_xyz_rpy(xyz, rpy, invert=False):
-    rot_mat = R.from_euler("xyz", rpy).as_dcm()
+    rot_mat = R.from_euler("xyz", rpy).as_matrix()
     return make_T_from_xyz_rotmat(xyz, rot_mat, invert)
 
 
