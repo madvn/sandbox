@@ -185,8 +185,8 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         auxil_loss1 = tf.reduce_sum((H_t - [C_to_B_tx_trainable, C_to_B_ty_trainable, C_to_B_tz_trainable]) ** 2)
         auxil_loss2 = tf.reduce_sum((H_r - (C_to_B_rotx_trainable, C_to_B_roty_trainable, C_to_B_rotz_trainable)) ** 2)
         optim_loss = (loss1 + loss2) / 80
-        auxil_loss = (auxil_loss1 + auxil_loss2) * 10 ** 2
-        loss = optim_loss + auxil_loss
+        auxil_loss = (auxil_loss1 + auxil_loss2) * 10 ** 2 / 10
+        loss = optim_loss  # + auxil_loss
 
         # gradient estimation and update ops
         gradient_holders = []
@@ -305,8 +305,16 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
             pcd1.paint_uniform_color(np.random.rand(3))  # [0.8703, 0.3481, 0.3481]
             new_stitched_pcd += pcd1
 
-    T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
-    return ls, als, T, new_stitched_pcd
+    T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=False)
+
+    print("\nInverted tf to use i.e. final results")
+    res_txt = ""
+    res_txt += "translation: {}\n".format(T[:3, -1].tolist())
+    res_txt += "rotation xyzw: {}\n".format(R.from_matrix(T[:3, :3]).as_quat().tolist())
+    res_txt += "rotation rpy: {}".format(R.from_matrix(T[:3, :3]).as_euler("xyz").tolist())
+    print(res_txt)
+
+    return ls, als, invert_tf(T), new_stitched_pcd
 
 
 def main(base_dir, output_dir, num_epochs, viz):
@@ -314,8 +322,8 @@ def main(base_dir, output_dir, num_epochs, viz):
     # setup
     #############################################
     DEVICE = "/gpu:0"
-    num_epochs = [num_epochs]
-    vars_to_train = [[1, 1, 1, 1, 1, 1]]  # ,[0, 1, 0, 0, 0, 0]]  # [x,y,z,r,p,y]
+    num_epochs = [num_epochs]  # /2, num_epochs/2]
+    vars_to_train = [[1, 1, 1, 0, 0, 0]]  # , [0, 0, 1, 0, 0, 0]]  # ,[0, 1, 0, 0, 0, 0]]  # [x,y,z,r,p,y]
 
     #############################################
     # load data and transforms
@@ -340,7 +348,7 @@ def main(base_dir, output_dir, num_epochs, viz):
         c = np.random.rand(3)
         c /= np.linalg.norm(c)
         pcd = o3d.io.read_point_cloud(os.path.join(cloud_file)).paint_uniform_color(c)
-        pcd = pcd.voxel_down_sample(0.01)
+        pcd = pcd.voxel_down_sample(0.005)
         S_to_C = transforms[str(section_ind)]["SL_to_carriage_flange"]
         pcd = pcd.transform(S_to_C)
         pcds.append(pcd)
@@ -423,7 +431,7 @@ if __name__ == "__main__":
         type=int,
         required=False,
         help="number of epochs",
-        default=100,
+        default=150,
         dest="num_epochs",
     )
     parser.add_argument(

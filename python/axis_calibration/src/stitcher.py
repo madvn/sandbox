@@ -316,18 +316,21 @@ def make_section_clouds_Insik(base_dir, transformed_cloud_files, section_tf_file
     """
     assert len(transformed_cloud_files) == len(section_tf_files), "Mismatch in length of cloud files and tf files"
     composite_cloud = o3d.geometry.PointCloud()
+    transformed_clouds = o3d.geometry.PointCloud()
 
     for cloud_file, tf_file in zip(transformed_cloud_files, section_tf_files):
         section_ind = int(cloud_file.split("_")[-1][:-4])
-        section_cloud = o3d.io.read_point_cloud(os.path.join(base_dir, cloud_file))
+        transformed_cloud = o3d.io.read_point_cloud(os.path.join(base_dir, cloud_file))
         tf = make_T_from_yaml(os.path.join(base_dir, tf_file))
-        section_cloud_tfed = section_cloud.transform(invert_tf(tf))
-        section_cloud_tfed.paint_uniform_color(np.random.rand(3))
-        # o3d.io.write_point_cloud(os.path.join(base_dir, "tf_" + cloud_file), section_cloud_tfed)
-        o3d.io.write_point_cloud(os.path.join(base_dir, "section_cloud_{}.ply".format(section_ind)), section_cloud_tfed)
-        composite_cloud += section_cloud_tfed
+        section_cloud = transformed_cloud.transform(invert_tf(tf))
+        section_cloud.paint_uniform_color(np.random.rand(3))
+        # o3d.io.write_point_cloud(os.path.join(base_dir, "tf_" + cloud_file), section_cloud)
+        o3d.io.write_point_cloud(os.path.join(base_dir, "section_cloud_{}.ply".format(section_ind)), section_cloud)
+        composite_cloud += section_cloud
+        transformed_clouds += transformed_cloud
 
     o3d.visualization.draw_geometries([composite_cloud])
+    o3d.visualization.draw_geometries([transformed_clouds])
 
 
 def stitch_section_clouds_Ben(base_dir, section_cloud_files, section_tf_files):
@@ -357,7 +360,7 @@ if __name__ == "__main__":
     # find and sort section tf files
     section_tf_files = glob.glob(os.path.join(base_dir, "section_cloud_tf_*.yaml"))
     section_tf_files = sorted(section_tf_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-5]))
-    section_tf_files = section_tf_files[::2]
+    section_tf_files = section_tf_files[1::2]
 
     # make names of section clouds
     section_cloud_files = [f.replace("transformed_cloud", "section_cloud") for f in transformed_cloud_files]
