@@ -28,50 +28,80 @@ from scipy.spatial.transform import Rotation as R
 from tools import *
 
 
+def make_section_clouds_from_transformed_clouds(base_dir):
+    """
+    read all transformed clouds, apply inverse of section_tf to them, and save as section_cloud
+    """
+    print("Making section clouds from transformed clouds")
+    # find and sort transformed cloud files
+    transformed_cloud_files = glob.glob(os.path.join(base_dir, "transformed_cloud_*.ply"))
+    transformed_cloud_files = sorted(transformed_cloud_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-4]))
+
+    # find and sort section tf files
+    section_tf_files = glob.glob(os.path.join(base_dir, "section_cloud_tf_*.yaml"))
+    section_tf_files = sorted(section_tf_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-5]))
+    section_tf_files = section_tf_files[1::2]
+
+    assert len(transformed_cloud_files) == len(section_tf_files), "Mismatch in length of cloud files and tf files"
+    composite_cloud = o3d.geometry.PointCloud()
+
+    for cloud_file, tf_file in zip(transformed_cloud_files, section_tf_files):
+        section_ind = int(cloud_file.split("_")[-1][:-4])
+        section_cloud = o3d.io.read_point_cloud(os.path.join(base_dir, cloud_file))
+        tf = make_T_from_yaml(os.path.join(base_dir, tf_file))
+        section_cloud_tfed = section_cloud.transform(invert_tf(tf))
+        section_cloud_tfed.paint_uniform_color(np.random.rand(3))
+        # o3d.io.write_point_cloud(os.path.join(base_dir, "tf_" + cloud_file), section_cloud_tfed)
+        o3d.io.write_point_cloud(os.path.join(base_dir, "section_cloud_{}.ply".format(section_ind)), section_cloud_tfed)
+        composite_cloud += section_cloud_tfed
+
+
 def read_transforms(base_dir):
     """
     Read all necessary transform for axis calibration
     """
     section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
+    if len(section_cloud_files) == 0:
+        make_section_clouds_from_transformed_clouds(base_dir)
+        section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
     section_cloud_files.sort()
 
     transforms = {}
 
-    S_to_C_file = os.path.join(base_dir, "primary_cam_to_carriage_flange.yaml")
-    if os.path.exists(S_to_C_file):
-        tf_S_to_C = make_T_from_yaml(S_to_C_file, invert=True)
-    else:
-        tf_S_to_C = make_T_from_yaml(os.path.join(base_dir, "primary_cam_to_carriage_flange.yaml"), invert=True)
-
-    print("tf_S_to_C:\n", tf_S_to_C)
-    transforms["SL_to_carriage_flange"] = tf_S_to_C.tolist()
-
-    tf_C_to_B = make_T_from_yaml(os.path.join(base_dir, "carriage_flange_to_positioner_base.yaml"), invert=True)
-    print("tf_C_to_B:\n", tf_C_to_B)
-    transforms["carriage_flange_to_positioner_base"] = {}
-    transforms["carriage_flange_to_positioner_base"]["translation"] = tf_C_to_B[:3, -1].tolist()
-    transforms["carriage_flange_to_positioner_base"]["rotation"] = tf_C_to_B[:3, :3].tolist()
-
-    for section_ind in range(len(section_cloud_files)):
-        section_tf = make_T_from_yaml(
-            os.path.join(base_dir, "positioner_base_to_positioner_tool0_{}.yaml".format(section_ind)), invert=True
-        )
+    for cloud_file in section_cloud_files:
+        section_ind = int(cloud_file.split("_")[-1].split(".")[0])
         transforms[str(section_ind)] = {}
-        transforms[str(section_ind)]["flange_to_tool0"] = {}
-        transforms[str(section_ind)]["flange_to_tool0"]["translation"] = section_tf[:3, -1].tolist()
-        transforms[str(section_ind)]["flange_to_tool0"]["rotation"] = section_tf[:3, :3].tolist()
+
+        tf_S_to_C = make_T_from_yaml(
+            os.path.join(base_dir, f"primary_cam_to_positioner_carriage_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["SL_to_carriage_flange"] = tf_S_to_C.tolist()
+
+        tf_C_to_B = make_T_from_yaml(
+            os.path.join(base_dir, f"positioner_carriage_to_positioner_base_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"] = {}
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"]["translation"] = tf_C_to_B[:3, -1].tolist()
+        transforms[str(section_ind)]["carriage_flange_to_positioner_base"]["rotation"] = tf_C_to_B[:3, :3].tolist()
+
+        section_tf = make_T_from_yaml(
+            os.path.join(base_dir, f"positioner_base_to_positioner_tool_{section_ind}.yaml"), invert=True
+        )
+        transforms[str(section_ind)]["positioner_base_to_tool0"] = {}
+        transforms[str(section_ind)]["positioner_base_to_tool0"]["translation"] = section_tf[:3, -1].tolist()
+        transforms[str(section_ind)]["positioner_base_to_tool0"]["rotation"] = section_tf[:3, :3].tolist()
 
     return transforms
 
 
-def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE, viz):
+def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = DEVICE[-1]
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
-    C_to_B_t = transforms["carriage_flange_to_positioner_base"]["translation"]
-    C_to_B_r = R.from_dcm(transforms["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
+    C_to_B_t = transforms["0"]["carriage_flange_to_positioner_base"]["translation"]
+    C_to_B_r = R.from_matrix(transforms["0"]["carriage_flange_to_positioner_base"]["rotation"]).as_euler("xyz")
 
     #############################################
     # Build computational graph for optimization
@@ -155,8 +185,8 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         auxil_loss1 = tf.reduce_sum((H_t - [C_to_B_tx_trainable, C_to_B_ty_trainable, C_to_B_tz_trainable]) ** 2)
         auxil_loss2 = tf.reduce_sum((H_r - (C_to_B_rotx_trainable, C_to_B_roty_trainable, C_to_B_rotz_trainable)) ** 2)
         optim_loss = (loss1 + loss2) / 80
-        auxil_loss = (auxil_loss1 + auxil_loss2) * 10 ** 3
-        loss = optim_loss + auxil_loss
+        auxil_loss = (auxil_loss1 + auxil_loss2) * 10 ** 2 / 10
+        loss = optim_loss  # + auxil_loss
 
         # gradient estimation and update ops
         gradient_holders = []
@@ -184,8 +214,8 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
                 [pts1_M],
                 feed_dict={
                     pts1_pl: pts,
-                    B_to_A_1_t_pl: transforms[str(ind1)]["flange_to_tool0"]["translation"],
-                    B_to_A_1_r_pl: transforms[str(ind1)]["flange_to_tool0"]["rotation"],
+                    B_to_A_1_t_pl: transforms[str(ind1)]["positioner_base_to_tool0"]["translation"],
+                    B_to_A_1_r_pl: transforms[str(ind1)]["positioner_base_to_tool0"]["rotation"],
                 },
             )
             pcd1 = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts1_m[0])).paint_uniform_color(pcd_colors[ind1])
@@ -219,10 +249,10 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
                             num_point1: len(pts_data[ind1]),
                             num_point2: len(pts_data[ind2]),
                             num_features: 3,
-                            B_to_A_1_t_pl: transforms[str(ind1)]["flange_to_tool0"]["translation"],
-                            B_to_A_1_r_pl: transforms[str(ind1)]["flange_to_tool0"]["rotation"],
-                            B_to_A_2_t_pl: transforms[str(ind2)]["flange_to_tool0"]["translation"],
-                            B_to_A_2_r_pl: transforms[str(ind2)]["flange_to_tool0"]["rotation"],
+                            B_to_A_1_t_pl: transforms[str(ind1)]["positioner_base_to_tool0"]["translation"],
+                            B_to_A_1_r_pl: transforms[str(ind1)]["positioner_base_to_tool0"]["rotation"],
+                            B_to_A_2_t_pl: transforms[str(ind2)]["positioner_base_to_tool0"]["translation"],
+                            B_to_A_2_r_pl: transforms[str(ind2)]["positioner_base_to_tool0"]["rotation"],
                         },
                     )
                     l += _l
@@ -247,27 +277,6 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         for n_epochs, train_mask in zip(num_epochs, vars_to_train):
             run_training_epochs(n_epochs, train_mask)
 
-        #############################################
-        # Log data after optimization
-        #############################################
-        fig, ax1 = plt.subplots(figsize=[4, 3])
-        color = "tab:red"
-        # ax1.plot(smoothen(ls, 20), label="Optim Loss", color=color, alpha=0.5)
-        ax1.plot(ls, label="Optim Loss", color=color, alpha=0.5)
-        ax1.set_ylabel("Optim loss", color=color)
-        ax1.tick_params(axis="y", labelcolor=color)
-
-        ax2 = ax1.twinx()
-        color = "tab:blue"
-        ax2.plot(als, label="Auxil Loss", color=color, alpha=0.5)
-        ax2.set_ylabel("Auxiliary Loss", color=color)
-        ax2.tick_params(axis="y", labelcolor=color)
-        ax2.set_xlabel("Time")
-
-        plt.tight_layout()
-        plt.savefig("optim.png")
-        # plt.show()
-
         result_xyz = list(sess.run([[C_to_B_tx_trainable, C_to_B_ty_trainable, C_to_B_tz_trainable]])[0])
         result_rpy = list(sess.run([C_to_B_rotx_trainable, C_to_B_roty_trainable, C_to_B_rotz_trainable]))
 
@@ -278,9 +287,6 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
         res += "\n\n" + "##" * 5 + " After " + "##" * 5 + "\n"
         res += "Rot_rpy:{}".format(result_rpy) + "\n"
         res += "Translation:{}".format(result_xyz) + "\n"
-        with open("res.txt", "w") as f:
-            f.write(res)
-        print(res)
 
         #############################################
         # Stitch pcds after optimization and show
@@ -291,62 +297,110 @@ def optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE
                 [pts1_M],
                 feed_dict={
                     pts1_pl: pts,
-                    B_to_A_1_t_pl: transforms[str(ind1)]["flange_to_tool0"]["translation"],
-                    B_to_A_1_r_pl: transforms[str(ind1)]["flange_to_tool0"]["rotation"],
+                    B_to_A_1_t_pl: transforms[str(ind1)]["positioner_base_to_tool0"]["translation"],
+                    B_to_A_1_r_pl: transforms[str(ind1)]["positioner_base_to_tool0"]["rotation"],
                 },
             )
             pcd1 = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts1_m[0]))
             pcd1.paint_uniform_color(np.random.rand(3))  # [0.8703, 0.3481, 0.3481]
             new_stitched_pcd += pcd1
 
-        o3d.io.write_point_cloud("new_stitched_pcd.ply", new_stitched_pcd)
+    T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=False)
 
-        print("\ninverted tf to use ")
-        T = make_T_from_xyz_rpy(result_xyz, result_rpy, invert=True)
-        print("translation: {}".format(T[:3, -1].tolist()))
-        print("rotation xyzw: {}".format(R.from_dcm(T[:3, :3]).as_quat().tolist()))
-        print("rotation rpy: {}".format(R.from_dcm(T[:3, :3]).as_euler("xyz").tolist()))
+    print("\nInverted tf to use i.e. final results")
+    res_txt = ""
+    res_txt += "translation: {}\n".format(T[:3, -1].tolist())
+    res_txt += "rotation xyzw: {}\n".format(R.from_matrix(T[:3, :3]).as_quat().tolist())
+    res_txt += "rotation rpy: {}".format(R.from_matrix(T[:3, :3]).as_euler("xyz").tolist())
+    print(res_txt)
 
-        if viz:
-            o3d.visualization.draw_geometries([new_stitched_pcd])
+    return ls, als, invert_tf(T), new_stitched_pcd
 
 
-def main(base_dir, num_epochs, viz):
+def main(base_dir, output_dir, num_epochs, viz):
     #############################################
     # setup
     #############################################
     DEVICE = "/gpu:0"
-    num_epochs = [num_epochs]
-    vars_to_train = [[1] * 6]  # ,[0, 1, 0, 0, 0, 0]]  # [x,y,z,r,p,y]
+    num_epochs = [num_epochs]  # /2, num_epochs/2]
+    vars_to_train = [[1, 1, 1, 0, 0, 0]]  # , [0, 0, 1, 0, 0, 0]]  # ,[0, 1, 0, 0, 0, 0]]  # [x,y,z,r,p,y]
 
     #############################################
     # load data and transforms
     #############################################
     # base_dir = "/home/madhavun/data/Valmont/valmontCell/8_258_2_1636237067045/"
-    section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
-    section_cloud_files.sort()
-    print("\n".join(section_cloud_files))
+    # section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
+    # section_cloud_files.sort()
+    # print("\n".join(section_cloud_files))
 
     # load in transforms for all scans i.e. base to tool0_theta for each scan
     transforms = read_transforms(base_dir)
 
+    section_cloud_files = glob.glob(os.path.join(base_dir, "section_cloud_*.ply"))
+    section_cloud_files = sorted(section_cloud_files, key=lambda f: int(f.split("/")[-1].split("_")[-1][:-4]))
+    print("\n".join(section_cloud_files))
+
+    # load scans and transform to carriage flange
     pts_data = []
     pcds = []
     for cloud_file in section_cloud_files:
+        section_ind = int(cloud_file.split("_")[-1].split(".")[0])
         c = np.random.rand(3)
         c /= np.linalg.norm(c)
         pcd = o3d.io.read_point_cloud(os.path.join(cloud_file)).paint_uniform_color(c)
-        pcd = pcd.voxel_down_sample(0.01)
-        S_to_C = transforms["SL_to_carriage_flange"]
+        pcd = pcd.voxel_down_sample(0.005)
+        S_to_C = transforms[str(section_ind)]["SL_to_carriage_flange"]
         pcd = pcd.transform(S_to_C)
         pcds.append(pcd)
         pts_data.append(np.array(pcd.points))
     del pcd
     print("Loaded {} point clouds".format(len(pts_data)))
     if viz:
+        print("Showing all section scans in carriage flange frame")
         o3d.visualization.draw_geometries(pcds)
 
-    optimize_calibration(pts_data, transforms, num_epochs, vars_to_train, DEVICE, viz)
+    #############################################
+    # Registration-based axis calibration
+    #############################################
+    ls, als, calibrated_T, new_stitched_pcd = optimize_calibration(
+        pts_data, transforms, num_epochs, vars_to_train, DEVICE
+    )
+
+    #############################################
+    # Log results after optimization
+    #############################################
+    o3d.io.write_point_cloud(os.path.join(output_dir, "new_stitched_pcd.ply"), new_stitched_pcd)
+
+    fig, ax1 = plt.subplots(figsize=[4, 3])
+    color = "tab:red"
+    # ax1.plot(smoothen(ls, 20), label="Optim Loss", color=color, alpha=0.5)
+    ax1.plot(ls, label="Optim Loss", color=color, alpha=0.5)
+    ax1.set_ylabel("Optim loss", color=color)
+    ax1.tick_params(axis="y", labelcolor=color)
+
+    ax2 = ax1.twinx()
+    color = "tab:blue"
+    ax2.plot(als, label="Auxil Loss", color=color, alpha=0.5)
+    ax2.set_ylabel("Auxiliary Loss", color=color)
+    ax2.tick_params(axis="y", labelcolor=color)
+    ax2.set_xlabel("Time")
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "optim.png"))
+    if viz:
+        plt.show()
+
+    print("\nInverted tf to use i.e. final results")
+    res_txt = ""
+    res_txt += "translation: {}\n".format(calibrated_T[:3, -1].tolist())
+    res_txt += "rotation xyzw: {}\n".format(R.from_matrix(calibrated_T[:3, :3]).as_quat().tolist())
+    res_txt += "rotation rpy: {}".format(R.from_matrix(calibrated_T[:3, :3]).as_euler("xyz").tolist())
+    print(res_txt)
+    with open(os.path.join(output_dir, "results.txt"), "w") as f:
+        f.write(res_txt)
+
+    if viz:
+        o3d.visualization.draw_geometries([new_stitched_pcd])
 
 
 if __name__ == "__main__":
@@ -355,12 +409,21 @@ if __name__ == "__main__":
         "-d",
         "--data-dir",
         type=str,
-        required=False,
+        required=True,
         help="path to dataset",
         # default="/home/madhavun/data/Valmont/valmontCell/8_258_2_1636237067045/",
-        default="/home/madhavun/data/Valmont/valmontCell/z_offsets/4_24_2_1636703828840",
+        # default="/home/madhavun/data/Valmont/valmontCell/z_offsets/4_24_2_1636703828840",
         # default = "/home/madhavun/data/Valmont/valmontCell/z_offsets/4_27_2_1636708143345",
         dest="base_dir",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=str,
+        required=False,
+        help="path to store results in",
+        default="./",
+        dest="output_dir",
     )
     parser.add_argument(
         "-e",
@@ -368,7 +431,7 @@ if __name__ == "__main__":
         type=int,
         required=False,
         help="number of epochs",
-        default=100,
+        default=150,
         dest="num_epochs",
     )
     parser.add_argument(
@@ -381,4 +444,4 @@ if __name__ == "__main__":
         dest="viz",
     )
     args = parser.parse_args()
-    main(args.base_dir, args.num_epochs, args.viz)
+    main(args.base_dir, args.output_dir, args.num_epochs, args.viz)
