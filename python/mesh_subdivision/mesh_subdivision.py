@@ -54,9 +54,10 @@ def subdivide_mesh(mesh, threshold=0.3):
 
         # add all new vertices and triangles to mesh
         # we now have a new version of the mesh to repeat the loop with
-        mesh = mesh.remove_triangles_by_index(triangle_remove_inds)
+        mesh.remove_triangles_by_index(triangle_remove_inds)
         vertices = list(vertices) + list(new_vertices)
-        triangles = list(triangles) + list(new_triangles)
+        triangles = list(np.array(mesh.triangles)) + list(new_triangles)
+        # triangles = list(triangles) + list(new_triangles)
         mesh.vertices = o3d.utility.Vector3dVector(vertices)
         mesh.triangles = o3d.utility.Vector3iVector(triangles)
         mesh.remove_duplicated_vertices()
@@ -64,3 +65,10 @@ def subdivide_mesh(mesh, threshold=0.3):
         mesh.remove_degenerate_triangles()
 
     return mesh
+
+cube = o3d.geometry.TriangleMesh.create_box(width=1.0, height=5.0, depth=1.0)
+import copy
+temp = subdivide_mesh(copy.deepcopy(cube))
+o3d.visualization.draw_geometries([cube])
+o3d.visualization.draw_geometries([temp])
+
