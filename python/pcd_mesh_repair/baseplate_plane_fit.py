@@ -12,11 +12,11 @@ class BaseplatePlaneFittingParams:
     def __init__(self, nominal_axis=2, plane_noise=0.001, ransac_min_count=10000, ransac_num_iters=1000, show=False):
         """
         Params for baseplate plane fitting
-        :param nominal_axis: provide from [0,1,2] for [x,y,z] nominal pole-axis respectively
-        :param plane_noise: noise level expected in the baseplate region of the scan
-        :param ransac_min_count: min number of initial points for ransac plane segmentation
-        :param ransac_num_iters: number of iters for plane segmentation
-        :param show: flag for visualizing results
+        :param nominal_axis: (int) provide from [0,1,2] for [x,y,z] nominal pole-axis respectively
+        :param plane_noise: (double) noise level expected in the baseplate region of the scan
+        :param ransac_min_count: (int) min number of initial points for ransac plane segmentation
+        :param ransac_num_iters: (int) number of iters for plane segmentation
+        :param show: (bool) flag for visualizing results
         """
         self.nominal_axis = nominal_axis
         self.plane_noise = plane_noise
@@ -143,12 +143,12 @@ def baseplate_plane_fitting(pcd, params):
     circle_center = plane_bbox.get_center()
     cropped_plane_pcd = crop_plane_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd)
 
-    # move plane towards bevel, and find root gap boundary
+    # move plane towards bevel, and find edge of baseplate
     noisy_plane_pcd, plane_bbox, circle_pcd = get_circle_pcd(pcd, cropped_plane_pcd, axis, -0.001)
     if show:
         o3d.visualization.draw_geometries([circle_pcd, plane_bbox])
 
-    # remove plane points that are inside the circle
+    # remove plane points that are outside the circle
     circle_center = plane_bbox.get_center()
     cropped_plane_pcd = crop_plane_with_circle(
         circle_pcd, circle_center, noisy_plane_pcd, cropped_plane_pcd, scale=0.9, invert=True
