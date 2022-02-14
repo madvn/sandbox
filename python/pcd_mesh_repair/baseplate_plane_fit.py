@@ -25,7 +25,7 @@ class BaseplatePlaneFittingParams:
         self.show = show
 
 
-def get_circle_pcd(pcd, plane_pcd, axis, offset):
+def slice_pcd_with_plane_pcd(pcd, plane_pcd, axis, offset):
     """
     slice pcd using plane_pcd after applying an offset along the specified axis
     """
@@ -42,17 +42,19 @@ def get_circle_pcd(pcd, plane_pcd, axis, offset):
 def get_max_point_distance(points):
     """
     There's got to be a better way to do this
-    open3d's get_point_cloud_distance isn't it
+    - open3d's get_point_cloud_distance isn't it
+    - can't find bbox extent because its a 2D surface
+    Currently, we run it only for a small number of points,
+    so its not too bad
     """
     diameter = 0.0
     for i in range(len(points)):
         for j in range(i, len(points)):
-            p1, p2 = points[i], points[j]
-            diameter = np.max([diameter, np.linalg.norm(p1 - p2)])
+            diameter = max(diameter, np.linalg.norm(points[i] - points[j]))
     return diameter
 
 
-def crop_plane_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd, scale=1.0, invert=False):
+def crop_plane_pcd_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd, scale=1.0, invert=False):
     """
     crop plane_pcd to remove points inside circle_pcd
     """
@@ -135,22 +137,22 @@ def baseplate_plane_fitting(pcd, params):
         o3d.visualization.draw_geometries([cropped_pcd, plane_pcd])
 
     # move plane towards bevel, and find root gap boundary circle
-    noisy_plane_pcd, plane_bbox, circle_pcd = get_circle_pcd(pcd, plane_pcd, axis, 0.005)
+    noisy_plane_pcd, plane_bbox, circle_pcd = slice_pcd_with_plane_pcd(pcd, plane_pcd, axis, 0.005)
     if show:
         o3d.visualization.draw_geometries([circle_pcd, plane_bbox])
 
     # remove plane points that are inside the circle
     circle_center = plane_bbox.get_center()
-    cropped_plane_pcd = crop_plane_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd)
+    cropped_plane_pcd = crop_plane_pcd_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd)
 
-    # move plane towards bevel, and find edge of baseplate
-    noisy_plane_pcd, plane_bbox, circle_pcd = get_circle_pcd(pcd, cropped_plane_pcd, axis, -0.001)
+    # move plane towards bevel, and find edge circle of baseplate
+    noisy_plane_pcd, plane_bbox, circle_pcd = slice_pcd_with_plane_pcd(pcd, cropped_plane_pcd, axis, -0.001)
     if show:
         o3d.visualization.draw_geometries([circle_pcd, plane_bbox])
 
     # remove plane points that are outside the circle
     circle_center = plane_bbox.get_center()
-    cropped_plane_pcd = crop_plane_with_circle(
+    cropped_plane_pcd = crop_plane_pcd_with_circle(
         circle_pcd, circle_center, noisy_plane_pcd, cropped_plane_pcd, scale=0.9, invert=True
     )
 
@@ -171,6 +173,9 @@ def local_test_madhavun():
     else:
         dataset_dir = "/home/madhavun/data/Valmont/valmontCell/83_1080_2_1644337816367/"
         prefix = ""
+    print(dataset_dir)
+
+    # if os.path.exists()
 
     # mesh input cloud if required
     if len(prefix) > 0:
@@ -200,14 +205,22 @@ def local_test_madhavun():
     os.system("mv mesh.ply {}".format(os.path.join(dataset_dir, prefix + "plane_fit_mesh.ply")))
 
     # open in meshlab
-    os.system(
-        "meshlab {} {} {}".format(
-            os.path.join(dataset_dir, prefix + "plane_fit_scan.ply"),
-            os.path.join(dataset_dir, prefix + "plane_fit_mesh.ply"),
-            os.path.join(dataset_dir, prefix + "mesh.ply"),
-        )
-    )
+    # os.system(
+    #     "meshlab {} {} {}".format(
+    #         os.path.join(dataset_dir, prefix + "plane_fit_scan.ply"),
+    #         os.path.join(dataset_dir, prefix + "plane_fit_mesh.ply"),
+    #         os.path.join(dataset_dir, prefix + "mesh.ply"),
+    #     )
+    # )
 
 
 if __name__ == "__main__":
     local_test_madhavun()
+
+
+# python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1434_2_1644855486859 &&
+
+# python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1435_2_1644856307194 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1436_2_1644856770982 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1437_2_1644857441106 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1438_2_1644857958573 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1439_2_1644858785818 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1440_2_1644859179493 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1445_2_1644864085483 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/T3750_2500_3125_R03_T23R_01 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/T5000_3750_3750_R03_T32R_01
+
+# && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1435_2_1644856307194 &&
+# python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1436_2_1644856770982 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1437_2_1644857441106 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1438_2_1644857958573 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1439_2_1644858785818 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1440_2_1644859179493 && python3 baseplate_plane_fit.py /home/madhavun/data/Valmont/valmontCell/bp_plane_fitting_with_mpaf/230_1445_2_1644864085483
