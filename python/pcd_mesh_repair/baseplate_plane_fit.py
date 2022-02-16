@@ -9,7 +9,9 @@ from sklearn.decomposition import PCA
 
 
 class BaseplatePlaneFittingParams:
-    def __init__(self, nominal_axis=2, plane_noise=0.001, ransac_min_count=10000, ransac_num_iters=1000, show=False):
+    def __init__(
+        self, nominal_axis=2, root_gap=0.01, plane_noise=0.001, ransac_min_count=10000, ransac_num_iters=1000, show=True
+    ):
         """
         Params for baseplate plane fitting
         :param nominal_axis: (int) provide from [0,1,2] for [x,y,z] nominal pole-axis respectively
@@ -19,6 +21,7 @@ class BaseplatePlaneFittingParams:
         :param show: (bool) flag for visualizing results
         """
         self.nominal_axis = nominal_axis
+        self.root_gap = root_gap
         self.plane_noise = plane_noise
         self.ransac_min_count = ransac_min_count
         self.ransac_num_iters = ransac_num_iters
@@ -54,6 +57,30 @@ def get_max_point_distance(points):
     return diameter
 
 
+def fit_circle(x, y):
+    return np.polyfit(x, y, 2)
+
+
+def crop_plane_pcd_with_circle_fitting(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd, scale=1.0, invert=False):
+    """
+    crop plane_pcd to remove points inside circle_pcd
+    """
+    circle_pcd = circle_pcd.translate(-circle_center)
+    noisy_plane_pcd = noisy_plane_pcd.translate(-circle_center)
+    # o3d.visualization.draw_geometries([circle_pcd, noisy_plane_pcd])
+    circle_pts = np.array(circle_pcd.points)
+
+    diameter = get_max_point_distance(circle_pts)
+    diameter *= scale
+    print("diameter: {}".format(diameter))
+    keep_inds = []
+    for ind, plane_point in enumerate(np.array(noisy_plane_pcd.points)):
+        if np.linalg.norm(plane_point) > diameter / 2:
+            keep_inds.append(ind)
+    cropped_plane_pcd = plane_pcd.select_by_index(keep_inds, invert)
+    return cropped_plane_pcd
+
+
 def crop_plane_pcd_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd, scale=1.0, invert=False):
     """
     crop plane_pcd to remove points inside circle_pcd
@@ -79,6 +106,7 @@ def baseplate_plane_fitting(pcd, params):
     """
     # prep
     nominal_axis = params.nominal_axis
+    root_gap = params.root_gap
     plane_noise = params.plane_noise
     ransac_min_count = params.ransac_min_count
     ransac_num_iters = params.ransac_num_iters
@@ -137,13 +165,15 @@ def baseplate_plane_fitting(pcd, params):
         o3d.visualization.draw_geometries([cropped_pcd, plane_pcd])
 
     # move plane towards bevel, and find root gap boundary circle
-    noisy_plane_pcd, plane_bbox, circle_pcd = slice_pcd_with_plane_pcd(pcd, plane_pcd, axis, 0.005)
+    noisy_plane_pcd, plane_bbox, circle_pcd = slice_pcd_with_plane_pcd(pcd, plane_pcd, axis, 0.75 * root_gap)
     if show:
         o3d.visualization.draw_geometries([circle_pcd, plane_bbox])
 
     # remove plane points that are inside the circle
     circle_center = plane_bbox.get_center()
-    cropped_plane_pcd = crop_plane_pcd_with_circle(circle_pcd, circle_center, noisy_plane_pcd, plane_pcd)
+    cropped_plane_pcd = crop_plane_pcd_with_circle(
+        circle_pcd, circle_center, noisy_plane_pcd, plane_pcd
+    )  # , scale=0.95)
 
     # move plane towards bevel, and find edge circle of baseplate
     noisy_plane_pcd, plane_bbox, circle_pcd = slice_pcd_with_plane_pcd(pcd, cropped_plane_pcd, axis, -0.001)
