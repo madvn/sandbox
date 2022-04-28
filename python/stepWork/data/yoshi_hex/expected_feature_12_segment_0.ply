@@ -1,0 +1,27 @@
+ply
+format binary_little_endian 1.0
+comment PCL generated
+obj_info is_cyberware_data 0
+obj_info is_mesh 0
+obj_info is_warped 0
+obj_info is_interlaced 0
+obj_info num_cols 33
+obj_info num_rows 1
+obj_info echo_rgb_offset_x 0
+obj_info echo_rgb_offset_y 0
+obj_info echo_rgb_offset_z 0
+obj_info echo_rgb_frontfocus 0.0
+obj_info echo_rgb_backfocus 0.0
+obj_info echo_rgb_pixelsize 0.0
+obj_info echo_rgb_centerpixel 0
+obj_info echo_frames 1
+obj_info echo_lgincr 0.0
+element vertex 33
+property float x
+property float y
+property float z
+end_header
+
+1îæÌ`?ôΩ©æÍµïæÙm?∫Ì©æ7óæÚç?(™æ∫∞òæò¿?z<™æRöæh?VZ™æIõæº[?sq™æ=Õúæº¬?óÅ™æ¯ûæj9?õä™æu&üæ§æ?hå™æÓ+†æQ?¸Ü™æ‹°æsÔ?az™æ‹°æò?∏f™æÇ¢ærI?2L™æ©£æ«?+™æDd£æTø?¢™ædù£æFÄ?J÷©æ∞£æΩB ?x£©ædù£æﬁ!?™k©æDd£æ…ƒ!?i/©æ©£æ•Ä"?KÔ®æÇ¢æ¢6#?Í´®æ‹°æˇ‰#?Úe®æ‹°æä$?
+®æÓ+†æ<$%?Ê‘ßæu&üæ≤%?;ãßæ¯ûæ2&?ΩAßæ=Õúæ-£&?!˘¶æIõæ2'?≤¶æRöæ9T'?Zm¶æ∫∞òæzí'?à+¶æ7óæ]æ'?GÌ•æÍµïæv◊'?.≥•æ
+1îæÜ›'?–}•æ

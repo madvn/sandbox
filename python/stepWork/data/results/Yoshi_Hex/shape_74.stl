@@ -1,0 +1,16 @@
+solid 
+ facet normal  4.007290e-01 -9.800481e-02  9.109398e-01
+   outer loop
+     vertex -2.345377e+02  6.721906e+02 -5.659963e+02
+     vertex -2.437764e+02  6.713331e+02 -5.620244e+02
+     vertex -2.437052e+02  6.695155e+02 -5.622513e+02
+   endloop
+ endfacet
+ facet normal  4.007290e-01 -9.800481e-02  9.109398e-01
+   outer loop
+     vertex -2.344666e+02  6.703730e+02 -5.662232e+02
+     vertex -2.345377e+02  6.721906e+02 -5.659963e+02
+     vertex -2.437052e+02  6.695155e+02 -5.622513e+02
+   endloop
+ endfacet
+endsolid
