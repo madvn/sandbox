@@ -15,12 +15,14 @@ void meshIt(open3d::geometry::PointCloud& pcd, open3d::geometry::TriangleMesh& m
   input_poisson.points_ = pcd.points_;
   input_poisson.normals_ = pcd.normals_;
   auto tuple_tmp = path_poisson::createPoissonMeshFromPointCloud(input_poisson, depth, weight, width, scale, linear_fit, mesh_ops);
+  //std::cout<<tuple_tmp;
   mesh_tmp = std::get<0>(tuple_tmp);
   mesh.adjacency_list_ = mesh_tmp.adjacency_list_;
   mesh.vertices_ = mesh_tmp.vertices_;
   mesh.vertex_normals_ = mesh_tmp.vertex_normals_;
   mesh.triangles_ = mesh_tmp.triangles_;
   mesh.triangle_normals_ = mesh_tmp.triangle_normals_;
+
   mesh = mesh.ComputeTriangleNormals(false);
   // mesh = SimplifyQuadricDecimation(mesh,10000);
 
@@ -289,7 +291,7 @@ void makeHybridPointCloud(const open3d::geometry::PointCloud& tmp_scan,
   }
 }
 
-int main(int argc, char** argv)
+int main2(int argc, char** argv)
 {
   open3d::geometry::PointCloud model_pcd, scan_pcd, output_pcd1, output_pcd2, output_pcd3;
   open3d::geometry::TriangleMesh output_mesh1, output_mesh2, output_mesh3;
@@ -327,5 +329,174 @@ int main(int argc, char** argv)
   std::cout << std::endl;
   open3d::io::WritePointCloud("./hybrid_pcd.ply", output_pcd1);
   open3d::io::WriteTriangleMesh("./hybrid_mesh.ply", hybrid_mesh);
+
+}
+
+void scan_density_heatmap()
+{
+  std::string composite_normal_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/cloud_composite_normals.ply";
+//  std::string composite_normal_path = "/home/pmitra/data/valmont/84_1111_2_1644429204689/cloud_composite_normals.ply";
+
+// poisson reconstruction params
+  double density_threshold = 0.0;
+  size_t depth = 10;
+  double weight = 5;
+  size_t width = 0;
+  double scale = 1.1;
+  bool linear_fit = false;
+
+
+
+  open3d::geometry::PointCloud pcd_hybrid_cloud;
+  open3d::geometry::TriangleMesh mesh_hybrid_cloud;
+
+  open3d::io::ReadPointCloud(composite_normal_path, pcd_hybrid_cloud);
+
+  std::cout << "Meshing..." << std::endl;
+  path_poisson::TriangleMesh meshed_output;
+  path_poisson::MeshOptions mesh_ops;
+  mesh_ops.verbose = false;
+  path_poisson::PointCloud input_poisson_cloud;
+//
+//
+  input_poisson_cloud.points_ = pcd_hybrid_cloud.points_;
+  input_poisson_cloud.normals_ = pcd_hybrid_cloud.normals_;
+//  std::cout << input_poisson_cloud.points_.size() << "  ---  " << input_poisson_cloud.normals_.size() << "\n";
+  auto output_poisson_reconstruction = path_poisson::createPoissonMeshFromPointCloud(input_poisson_cloud, depth, weight, width, scale, linear_fit, mesh_ops);
+//  meshIt(pcd_hybrid_cloud, mesh_hybrid_cloud);
+  meshed_output = std::get<0>(output_poisson_reconstruction);
+  mesh_hybrid_cloud.adjacency_list_ = meshed_output.adjacency_list_;
+  mesh_hybrid_cloud.vertices_ = meshed_output.vertices_;
+  mesh_hybrid_cloud.vertex_normals_ = meshed_output.vertex_normals_;
+  mesh_hybrid_cloud.triangles_ = meshed_output.triangles_;
+  mesh_hybrid_cloud.triangle_normals_ = meshed_output.triangle_normals_;
+//
+  std::cout<<mesh_hybrid_cloud.vertices_.size()<<std::endl;
+//
+  mesh_hybrid_cloud = mesh_hybrid_cloud.ComputeTriangleNormals(false);
+
+//  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(mesh_hybrid_cloud) });
+//
+//
+  auto densities = std::get<1>(output_poisson_reconstruction);
+  std::cout<<densities.size()<<std::endl;
+//
+  //create density mesh
+  open3d::geometry::TriangleMesh density_mesh;
+  density_mesh.adjacency_list_ = mesh_hybrid_cloud.adjacency_list_;
+  density_mesh.vertices_ = mesh_hybrid_cloud.vertices_;
+  density_mesh.vertex_normals_ = mesh_hybrid_cloud.vertex_normals_;
+  density_mesh.triangles_ = mesh_hybrid_cloud.triangles_;
+  density_mesh.triangle_normals_ = mesh_hybrid_cloud.triangle_normals_;
+
+  float min_density = *min_element(densities.begin(), densities.end());
+  float max_density = *max_element(densities.begin(), densities.end());
+
+  std::vector<Eigen::Vector3d> density_based_colors(density_mesh.vertices_.size());
+  for(auto iDensity = 0; iDensity<densities.size(); iDensity++)
+  {
+     density_based_colors[iDensity][0] = ((densities[iDensity] - min_density)/(max_density - min_density));
+     density_based_colors[iDensity][1] = ((densities[iDensity] - min_density)/(max_density - min_density));
+     density_based_colors[iDensity][2] = 0.9;
+     //std::cout<<density_based_colors[iDensity][0]<<std::endl;
+  }
+  density_mesh.vertex_colors_ = density_based_colors;
+//  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh) });
+  open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh.ply", density_mesh);
+
+
+  //Building KDTree of mesh vertices to extract densities of triangles near the seam
+  /*
+   * Steps:
+   * Keep populating the points in a vector
+   * Remove duplicate points
+   */
+
+  //load seam point_cloud
+  std::string seam_point_cloud_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/tf_feature_normals_0.ply";
+  open3d::geometry::PointCloud seam_point_cloud;
+  open3d::io::ReadPointCloud(seam_point_cloud_path, seam_point_cloud);
+
+  auto mesh_hybrid_cloud_scan_kdtree = std::make_shared<open3d::geometry::KDTreeFlann>();
+  std::cout<<"Creating KDTree for hybrid mesh...\n";
+  mesh_hybrid_cloud_scan_kdtree->SetGeometry(mesh_hybrid_cloud);
+  std::cout<<"Done\n";
+  std::cout<<"what is happening";
+
+  std::cout<<seam_point_cloud.points_.size();
+
+
+  // evaluate along the seam
+  std::vector<int>all_mesh_vertex_indices_nearest_to_seam;
+  for (auto point : seam_point_cloud.points_)
+    {
+      // count number of points in the scan
+      std::vector<int> mesh_vertex_indices_nearest_to_point;
+      std::vector<double> mesh_vertex_distances_nearest_to_point;
+      mesh_hybrid_cloud_scan_kdtree->SearchRadius(point, 0.02, mesh_vertex_indices_nearest_to_point, mesh_vertex_distances_nearest_to_point);
+//      std::cout<<mesh_hybrid_cloud.vertices_[mesh_vertex_indices_nearest_to_point[0]]<<std::endl;
+      for(int i = 0; i<mesh_vertex_indices_nearest_to_point.size(); i++)
+      {
+          all_mesh_vertex_indices_nearest_to_seam.push_back(mesh_vertex_indices_nearest_to_point[i]);
+      }
+
+    }
+  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size();
+
+
+  /*
+   * Steps:
+   * 1) Create a TriangleMesh and initialize only with the vertex, vertex_normals, triangles, triangle_normals near the seam
+   * 2) Fetch densities of these points
+   * 3) Create density based colors only of these mesh vertices
+   * 4) Bin these densities
+   * 5) Repeat steps 1-4 for a good and a bad seam
+   */
+
+  open3d::geometry::TriangleMesh density_mesh_seam;
+  density_mesh.adjacency_list_ = mesh_hybrid_cloud.adjacency_list_;
+  density_mesh.vertices_ = mesh_hybrid_cloud.vertices_;
+  density_mesh.vertex_normals_ = mesh_hybrid_cloud.vertex_normals_;
+  density_mesh.triangles_ = mesh_hybrid_cloud.triangles_;
+  density_mesh.triangle_normals_ = mesh_hybrid_cloud.triangle_normals_;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+int main(int argc, char** argv)
+{
+//    open3d::geometry::PointCloud scan_cloud;
+//    open3d::io::ReadPointCloud("/home/pmitra/100_1282_2_1645371185020/cloud_composite_normals.ply", scan_cloud);
+//
+//    open3d::visualization::DrawGeometries({std::make_shared<open3d::geometry::PointCloud>(scan_cloud)});
+
+//    open3d::geometry::PointCloud scan_cloud;
+//    open3d::geometry::TriangleMesh triangle_mesh;
+//    open3d::io::ReadPointCloud("/home/pmitra/100_1282_2_1645371185020/cloud_composite_normals.ply", scan_cloud);
+//    meshIt(scan_cloud, triangle_mesh);
+//    std::cout<<"meshed it"<<std::endl;
+//    open3d::visualization::DrawGeometries({std::make_shared<open3d::geometry::TriangleMesh>(triangle_mesh)});
+
+      scan_density_heatmap();
+
 
 }
