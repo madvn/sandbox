@@ -4,6 +4,8 @@
 
 #include <vector>
 #include <memory>
+#include <iostream>
+#include <fstream>
 
 void meshIt(open3d::geometry::PointCloud& pcd, open3d::geometry::TriangleMesh& mesh, double density_threshold = 0.0, size_t depth = 10, double weight = 5, size_t width = 0, double scale = 1.1, bool linear_fit = false)
 {
@@ -332,10 +334,34 @@ int main2(int argc, char** argv)
 
 }
 
+
+
+void write_density_to_file(std::vector<double> densities)
+{
+    std::ofstream myfile ("/home/pmitra/seam_densities.txt");
+
+    if (myfile.is_open())
+    {
+        for(int i = 0; i< densities.size(); i++)
+        {
+//            std::string str_density = std::to_string(densities[i]);
+//            myfile<<str_density;
+            myfile<<densities[i];
+            myfile<<"\n";
+        }
+        myfile.close();
+        std::cout<<"Written to text file\n";
+    }
+    else
+    {
+        std::cout << "Unable to open file";
+    }
+}
+
 void scan_density_heatmap()
 {
-  std::string composite_normal_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/cloud_composite_normals.ply";
-//  std::string composite_normal_path = "/home/pmitra/data/valmont/84_1111_2_1644429204689/cloud_composite_normals.ply";
+ std::string composite_normal_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/cloud_composite_normals.ply";
+//  std::string composite_normal_path = "/home/pmitra/data/western/253_1676_2_1648845471114/cloud_composite_normals.ply";
 
 // poisson reconstruction params
   double density_threshold = 0.0;
@@ -379,30 +405,30 @@ void scan_density_heatmap()
 //
 //
   auto densities = std::get<1>(output_poisson_reconstruction);
-  std::cout<<densities.size()<<std::endl;
+//  std::cout<<densities.size()<<std::endl;
+////
+//  //create density mesh
+//  open3d::geometry::TriangleMesh density_mesh;
+//  density_mesh.adjacency_list_ = mesh_hybrid_cloud.adjacency_list_;
+//  density_mesh.vertices_ = mesh_hybrid_cloud.vertices_;
+//  density_mesh.vertex_normals_ = mesh_hybrid_cloud.vertex_normals_;
+//  density_mesh.triangles_ = mesh_hybrid_cloud.triangles_;
+//  density_mesh.triangle_normals_ = mesh_hybrid_cloud.triangle_normals_;
 //
-  //create density mesh
-  open3d::geometry::TriangleMesh density_mesh;
-  density_mesh.adjacency_list_ = mesh_hybrid_cloud.adjacency_list_;
-  density_mesh.vertices_ = mesh_hybrid_cloud.vertices_;
-  density_mesh.vertex_normals_ = mesh_hybrid_cloud.vertex_normals_;
-  density_mesh.triangles_ = mesh_hybrid_cloud.triangles_;
-  density_mesh.triangle_normals_ = mesh_hybrid_cloud.triangle_normals_;
-
-  float min_density = *min_element(densities.begin(), densities.end());
-  float max_density = *max_element(densities.begin(), densities.end());
-
-  std::vector<Eigen::Vector3d> density_based_colors(density_mesh.vertices_.size());
-  for(auto iDensity = 0; iDensity<densities.size(); iDensity++)
-  {
-     density_based_colors[iDensity][0] = ((densities[iDensity] - min_density)/(max_density - min_density));
-     density_based_colors[iDensity][1] = ((densities[iDensity] - min_density)/(max_density - min_density));
-     density_based_colors[iDensity][2] = 0.9;
-     //std::cout<<density_based_colors[iDensity][0]<<std::endl;
-  }
-  density_mesh.vertex_colors_ = density_based_colors;
-//  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh) });
-  open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh.ply", density_mesh);
+//  float min_density = *min_element(densities.begin(), densities.end());
+//  float max_density = *max_element(densities.begin(), densities.end());
+//
+//  std::vector<Eigen::Vector3d> density_based_colors(density_mesh.vertices_.size());
+//  for(auto iDensity = 0; iDensity<densities.size(); iDensity++)
+//  {
+//     density_based_colors[iDensity][0] = ((densities[iDensity] - min_density)/(max_density - min_density));
+//     density_based_colors[iDensity][1] = ((densities[iDensity] - min_density)/(max_density - min_density));
+//     density_based_colors[iDensity][2] = 0.9;
+//     //std::cout<<density_based_colors[iDensity][0]<<std::endl;
+//  }
+//  density_mesh.vertex_colors_ = density_based_colors;
+////  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh) });
+//  open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh.ply", density_mesh);
 
 
   //Building KDTree of mesh vertices to extract densities of triangles near the seam
@@ -421,9 +447,8 @@ void scan_density_heatmap()
   std::cout<<"Creating KDTree for hybrid mesh...\n";
   mesh_hybrid_cloud_scan_kdtree->SetGeometry(mesh_hybrid_cloud);
   std::cout<<"Done\n";
-  std::cout<<"what is happening";
 
-  std::cout<<seam_point_cloud.points_.size();
+  std::cout<<seam_point_cloud.points_.size()<<std::endl;
 
 
   // evaluate along the seam
@@ -434,14 +459,29 @@ void scan_density_heatmap()
       std::vector<int> mesh_vertex_indices_nearest_to_point;
       std::vector<double> mesh_vertex_distances_nearest_to_point;
       mesh_hybrid_cloud_scan_kdtree->SearchRadius(point, 0.02, mesh_vertex_indices_nearest_to_point, mesh_vertex_distances_nearest_to_point);
-//      std::cout<<mesh_hybrid_cloud.vertices_[mesh_vertex_indices_nearest_to_point[0]]<<std::endl;
       for(int i = 0; i<mesh_vertex_indices_nearest_to_point.size(); i++)
       {
           all_mesh_vertex_indices_nearest_to_seam.push_back(mesh_vertex_indices_nearest_to_point[i]);
       }
 
     }
-  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size();
+
+    std::sort(all_mesh_vertex_indices_nearest_to_seam.begin(), all_mesh_vertex_indices_nearest_to_seam.end());
+    all_mesh_vertex_indices_nearest_to_seam.erase( unique( all_mesh_vertex_indices_nearest_to_seam.begin(), all_mesh_vertex_indices_nearest_to_seam.end() ), all_mesh_vertex_indices_nearest_to_seam.end() );
+
+    for(int i = 0; i< all_mesh_vertex_indices_nearest_to_seam.size() - 1; i++)
+      {
+          if (all_mesh_vertex_indices_nearest_to_seam[i] == all_mesh_vertex_indices_nearest_to_seam[i+1])
+          {
+              std::cout<<all_mesh_vertex_indices_nearest_to_seam[i]<<std::endl;
+
+          }
+      }
+  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
+
+
+//
+//  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
 
 
   /*
@@ -453,34 +493,82 @@ void scan_density_heatmap()
    * 5) Repeat steps 1-4 for a good and a bad seam
    */
 
-  open3d::geometry::TriangleMesh density_mesh_seam;
-  density_mesh.adjacency_list_ = mesh_hybrid_cloud.adjacency_list_;
-  density_mesh.vertices_ = mesh_hybrid_cloud.vertices_;
-  density_mesh.vertex_normals_ = mesh_hybrid_cloud.vertex_normals_;
-  density_mesh.triangles_ = mesh_hybrid_cloud.triangles_;
-  density_mesh.triangle_normals_ = mesh_hybrid_cloud.triangle_normals_;
+//  open3d::geometry::TriangleMesh density_mesh_seam;
+//  for(int i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+//    {
+//
+//        density_mesh_seam.vertices_.push_back(mesh_hybrid_cloud.vertices_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//        density_mesh_seam.vertex_normals_.push_back(mesh_hybrid_cloud.vertex_normals_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//        density_mesh_seam.triangles_.push_back(mesh_hybrid_cloud.triangles_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//        density_mesh_seam.triangle_normals_.push_back(mesh_hybrid_cloud.triangle_normals_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//
+//    }
+//  std::cout<<"pushed density vertices";
+//
+//  std::vector<double>densities_seam;
+//  for(int i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+//  {
+//      densities_seam.push_back(densities[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//  }
+//
+//    float min_density_seam = *min_element(densities_seam.begin(), densities_seam.end());
+//    float max_density_seam = *max_element(densities_seam.begin(), densities_seam.end());
+//
+//    std::vector<Eigen::Vector3d> density_based_colors_seam(density_mesh_seam.vertices_.size());
+//    for(auto iDensity = 0; iDensity<densities_seam.size(); iDensity++)
+//    {
+//        density_based_colors_seam[iDensity][0] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+//        density_based_colors_seam[iDensity][1] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+//        density_based_colors_seam[iDensity][2] = 0.9;
+//        //std::cout<<density_based_colors[iDensity][0]<<std::endl;
+//    }
+//    density_mesh_seam.vertex_colors_ = density_based_colors_seam;
+////  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh) });
+//    open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh_seam.ply", density_mesh_seam);
 
+    open3d::geometry::TriangleMesh density_mesh_seam(mesh_hybrid_cloud);
+    std::vector<bool> non_seam_mask(mesh_hybrid_cloud.vertices_.size(), true);
+    for (size_t i = 0; i < all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+    {
+        non_seam_mask[all_mesh_vertex_indices_nearest_to_seam[i]] = false ;
+    }
 
+    density_mesh_seam.RemoveVerticesByMask(non_seam_mask);
+    std::cout<<density_mesh_seam.vertices_.size()<<std::endl;
 
+//    std::cout<<density_mesh_seam.HasVertexColors()<< "CP 0 -------"<<std::endl;
+    std::cout<<"vertices removed"<<std::endl;
+      std::vector<double>densities_seam;
+  for(size_t i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+  {
+      densities_seam.push_back(densities[all_mesh_vertex_indices_nearest_to_seam[i]]);
+  }
+  std::cout<<"seam densitites populated  "<<densities_seam.size()<<std::endl;
+//    std::cout<<density_mesh_seam.HasVertexColors()<< "CP 1 -------"<<std::endl;
+    float min_density_seam = *min_element(densities_seam.begin(), densities_seam.end());
+    float max_density_seam = *max_element(densities_seam.begin(), densities_seam.end());
 
+    std::vector<Eigen::Vector3d> density_based_colors_seam(density_mesh_seam.vertices_.size());
 
+    std::cout<<densities_seam.size()<<std::endl;
+    std::cout<<density_mesh_seam.vertices_.size()<<std::endl;
+    std::cout<<density_based_colors_seam.size()<<std::endl;
+    for(size_t iDensity = 0; iDensity<density_based_colors_seam.size(); iDensity++)
+    {
+        density_based_colors_seam[iDensity][0] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+        density_based_colors_seam[iDensity][1] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+        density_based_colors_seam[iDensity][2] = 0.9;
+    }
 
+    density_mesh_seam.vertex_colors_ = density_based_colors_seam;
 
+  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh_seam) });
+  open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh_seam.ply", density_mesh_seam);
 
-
-
-
-
-
-
-
-
-
-
-
-
+    write_density_to_file(densities_seam);
 
 }
+
 
 int main(int argc, char** argv)
 {
