@@ -1,6 +1,7 @@
 #include <poisson-recon/Reconstruction.h>
 
 #include <Open3D/Open3D.h>
+#include <Open3D/Geometry/PointCloud.h>
 
 #include <vector>
 #include <memory>
@@ -336,18 +337,16 @@ int main2(int argc, char** argv)
 
 
 
-void write_density_to_file(std::vector<double> densities)
+void write_density_to_file(std::vector<double> densities, std::string save_path)
 {
-    std::ofstream myfile ("/home/pmitra/seam_densities.txt");
+    std::ofstream myfile (save_path);
 
     if (myfile.is_open())
     {
         for(int i = 0; i< densities.size(); i++)
         {
-//            std::string str_density = std::to_string(densities[i]);
-//            myfile<<str_density;
             myfile<<densities[i];
-            myfile<<"\n";
+            myfile<<",";
         }
         myfile.close();
         std::cout<<"Written to text file\n";
@@ -358,53 +357,72 @@ void write_density_to_file(std::vector<double> densities)
     }
 }
 
-void scan_density_heatmap()
+void scan_density_heatmap_exp()
 {
- std::string composite_normal_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/cloud_composite_normals.ply";
+// std::string composite_normal_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/cloud_composite_normals.ply";
 //  std::string composite_normal_path = "/home/pmitra/data/western/253_1676_2_1648845471114/cloud_composite_normals.ply";
+//    std::string data_root_path =  "/home/pmitra/workspace/density_data/bad_scans/";
+//    std::string folder_path = "32_164_2_1651102426747";
+//
+//    std::string results_root_path = "/home/pmitra/workspace/density_results/bad/";
+//
+//    std::string composite_normal_path = data_root_path + folder_path + "/cloud_composite_normals.ply";
+//    std::string seam_point_cloud_path = data_root_path +  folder_path + "/tf_feature_normals_0.ply";
+//    std::string density_mesh_seam_save_path =  results_root_path + "density_mesh_seam_" + folder_path + ".ply";
+//    std::string densities_textfile_save_path = results_root_path + "densities_seam_" + folder_path + ".txt";
 
+
+std::string model_cloud_path = "/home/pmitra/data/valmont/79_1135_2_1644530181795/tf_model_cloud_.ply";
+std::string seam_point_cloud_path =  "/home/pmitra/data/valmont/79_1135_2_1644530181795/tf_feature_normals_0.ply";
+    std::string density_mesh_seam_save_path = "/home/pmitra/density_mesh_model_cloud.ply";
+    std::string densities_textfile_save_path = "/home/pmitra/density_seam_model_cloud.txt";
 // poisson reconstruction params
-  double density_threshold = 0.0;
-  size_t depth = 10;
-  double weight = 5;
-  size_t width = 0;
-  double scale = 1.1;
-  bool linear_fit = false;
+    double density_threshold = 0.0;
+    size_t depth = 10;
+    double weight = 5;
+    size_t width = 0;
+    double scale = 1.1;
+    bool linear_fit = false;
 
 
 
-  open3d::geometry::PointCloud pcd_hybrid_cloud;
-  open3d::geometry::TriangleMesh mesh_hybrid_cloud;
+    open3d::geometry::PointCloud pcd_hybrid_cloud;
+    open3d::geometry::TriangleMesh mesh_hybrid_cloud;
 
-  open3d::io::ReadPointCloud(composite_normal_path, pcd_hybrid_cloud);
+    open3d::io::ReadPointCloud(model_cloud_path, pcd_hybrid_cloud);
+    std::cout<<pcd_hybrid_cloud.points_.size()<<std::endl;
+    auto tf_model_cloud = *pcd_hybrid_cloud.VoxelDownSample(0.0005);
+    std::cout<<tf_model_cloud.points_.size()<<std::endl;
 
-  std::cout << "Meshing..." << std::endl;
-  path_poisson::TriangleMesh meshed_output;
-  path_poisson::MeshOptions mesh_ops;
-  mesh_ops.verbose = false;
-  path_poisson::PointCloud input_poisson_cloud;
+
+
+    std::cout << "Meshing..." << std::endl;
+    path_poisson::TriangleMesh meshed_output;
+    path_poisson::MeshOptions mesh_ops;
+    mesh_ops.verbose = false;
+    path_poisson::PointCloud input_poisson_cloud;
 //
 //
-  input_poisson_cloud.points_ = pcd_hybrid_cloud.points_;
-  input_poisson_cloud.normals_ = pcd_hybrid_cloud.normals_;
+    input_poisson_cloud.points_ = tf_model_cloud.points_;
+    input_poisson_cloud.normals_ = tf_model_cloud.normals_;
 //  std::cout << input_poisson_cloud.points_.size() << "  ---  " << input_poisson_cloud.normals_.size() << "\n";
-  auto output_poisson_reconstruction = path_poisson::createPoissonMeshFromPointCloud(input_poisson_cloud, depth, weight, width, scale, linear_fit, mesh_ops);
+    auto output_poisson_reconstruction = path_poisson::createPoissonMeshFromPointCloud(input_poisson_cloud, depth, weight, width, scale, linear_fit, mesh_ops);
 //  meshIt(pcd_hybrid_cloud, mesh_hybrid_cloud);
-  meshed_output = std::get<0>(output_poisson_reconstruction);
-  mesh_hybrid_cloud.adjacency_list_ = meshed_output.adjacency_list_;
-  mesh_hybrid_cloud.vertices_ = meshed_output.vertices_;
-  mesh_hybrid_cloud.vertex_normals_ = meshed_output.vertex_normals_;
-  mesh_hybrid_cloud.triangles_ = meshed_output.triangles_;
-  mesh_hybrid_cloud.triangle_normals_ = meshed_output.triangle_normals_;
+    meshed_output = std::get<0>(output_poisson_reconstruction);
+    mesh_hybrid_cloud.adjacency_list_ = meshed_output.adjacency_list_;
+    mesh_hybrid_cloud.vertices_ = meshed_output.vertices_;
+    mesh_hybrid_cloud.vertex_normals_ = meshed_output.vertex_normals_;
+    mesh_hybrid_cloud.triangles_ = meshed_output.triangles_;
+    mesh_hybrid_cloud.triangle_normals_ = meshed_output.triangle_normals_;
 //
-  std::cout<<mesh_hybrid_cloud.vertices_.size()<<std::endl;
+    std::cout<<mesh_hybrid_cloud.vertices_.size()<<std::endl;
 //
-  mesh_hybrid_cloud = mesh_hybrid_cloud.ComputeTriangleNormals(false);
+    mesh_hybrid_cloud = mesh_hybrid_cloud.ComputeTriangleNormals(false);
 
 //  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(mesh_hybrid_cloud) });
 //
 //
-  auto densities = std::get<1>(output_poisson_reconstruction);
+    auto densities = std::get<1>(output_poisson_reconstruction);
 //  std::cout<<densities.size()<<std::endl;
 ////
 //  //create density mesh
@@ -431,38 +449,37 @@ void scan_density_heatmap()
 //  open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh.ply", density_mesh);
 
 
-  //Building KDTree of mesh vertices to extract densities of triangles near the seam
-  /*
-   * Steps:
-   * Keep populating the points in a vector
-   * Remove duplicate points
-   */
+    //Building KDTree of mesh vertices to extract densities of triangles near the seam
+    /*
+     * Steps:
+     * Keep populating the points in a vector
+     * Remove duplicate points
+     */
 
-  //load seam point_cloud
-  std::string seam_point_cloud_path = "/home/pmitra/data/valmont/86_1129_2_1644514426588/tf_feature_normals_0.ply";
-  open3d::geometry::PointCloud seam_point_cloud;
-  open3d::io::ReadPointCloud(seam_point_cloud_path, seam_point_cloud);
+    //load seam point_cloud
+    open3d::geometry::PointCloud seam_point_cloud;
+    open3d::io::ReadPointCloud(seam_point_cloud_path, seam_point_cloud);
 
-  auto mesh_hybrid_cloud_scan_kdtree = std::make_shared<open3d::geometry::KDTreeFlann>();
-  std::cout<<"Creating KDTree for hybrid mesh...\n";
-  mesh_hybrid_cloud_scan_kdtree->SetGeometry(mesh_hybrid_cloud);
-  std::cout<<"Done\n";
+    auto mesh_hybrid_cloud_scan_kdtree = std::make_shared<open3d::geometry::KDTreeFlann>();
+    std::cout<<"Creating KDTree for hybrid mesh...\n";
+    mesh_hybrid_cloud_scan_kdtree->SetGeometry(mesh_hybrid_cloud);
+    std::cout<<"Done\n";
 
-  std::cout<<seam_point_cloud.points_.size()<<std::endl;
+    std::cout<<seam_point_cloud.points_.size()<<std::endl;
 
 
-  // evaluate along the seam
-  std::vector<int>all_mesh_vertex_indices_nearest_to_seam;
-  for (auto point : seam_point_cloud.points_)
+    // evaluate along the seam
+    std::vector<int>all_mesh_vertex_indices_nearest_to_seam;
+    for (auto point : seam_point_cloud.points_)
     {
-      // count number of points in the scan
-      std::vector<int> mesh_vertex_indices_nearest_to_point;
-      std::vector<double> mesh_vertex_distances_nearest_to_point;
-      mesh_hybrid_cloud_scan_kdtree->SearchRadius(point, 0.02, mesh_vertex_indices_nearest_to_point, mesh_vertex_distances_nearest_to_point);
-      for(int i = 0; i<mesh_vertex_indices_nearest_to_point.size(); i++)
-      {
-          all_mesh_vertex_indices_nearest_to_seam.push_back(mesh_vertex_indices_nearest_to_point[i]);
-      }
+        // count number of points in the scan
+        std::vector<int> mesh_vertex_indices_nearest_to_point;
+        std::vector<double> mesh_vertex_distances_nearest_to_point;
+        mesh_hybrid_cloud_scan_kdtree->SearchRadius(point, 0.02, mesh_vertex_indices_nearest_to_point, mesh_vertex_distances_nearest_to_point);
+        for(int i = 0; i<mesh_vertex_indices_nearest_to_point.size(); i++)
+        {
+            all_mesh_vertex_indices_nearest_to_seam.push_back(mesh_vertex_indices_nearest_to_point[i]);
+        }
 
     }
 
@@ -470,28 +487,28 @@ void scan_density_heatmap()
     all_mesh_vertex_indices_nearest_to_seam.erase( unique( all_mesh_vertex_indices_nearest_to_seam.begin(), all_mesh_vertex_indices_nearest_to_seam.end() ), all_mesh_vertex_indices_nearest_to_seam.end() );
 
     for(int i = 0; i< all_mesh_vertex_indices_nearest_to_seam.size() - 1; i++)
-      {
-          if (all_mesh_vertex_indices_nearest_to_seam[i] == all_mesh_vertex_indices_nearest_to_seam[i+1])
-          {
-              std::cout<<all_mesh_vertex_indices_nearest_to_seam[i]<<std::endl;
+    {
+        if (all_mesh_vertex_indices_nearest_to_seam[i] == all_mesh_vertex_indices_nearest_to_seam[i+1])
+        {
+            std::cout<<all_mesh_vertex_indices_nearest_to_seam[i]<<std::endl;
 
-          }
-      }
-  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
+        }
+    }
+    std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
 
 
 //
 //  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
 
 
-  /*
-   * Steps:
-   * 1) Create a TriangleMesh and initialize only with the vertex, vertex_normals, triangles, triangle_normals near the seam
-   * 2) Fetch densities of these points
-   * 3) Create density based colors only of these mesh vertices
-   * 4) Bin these densities
-   * 5) Repeat steps 1-4 for a good and a bad seam
-   */
+    /*
+     * Steps:
+     * 1) Create a TriangleMesh and initialize only with the vertex, vertex_normals, triangles, triangle_normals near the seam
+     * 2) Fetch densities of these points
+     * 3) Create density based colors only of these mesh vertices
+     * 4) Bin these densities
+     * 5) Repeat steps 1-4 for a good and a bad seam
+     */
 
 //  open3d::geometry::TriangleMesh density_mesh_seam;
 //  for(int i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
@@ -538,6 +555,210 @@ void scan_density_heatmap()
 
 //    std::cout<<density_mesh_seam.HasVertexColors()<< "CP 0 -------"<<std::endl;
     std::cout<<"vertices removed"<<std::endl;
+    std::vector<double>densities_seam;
+    for(size_t i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+    {
+        densities_seam.push_back(densities[all_mesh_vertex_indices_nearest_to_seam[i]]);
+    }
+    std::cout<<"seam densitites populated  "<<densities_seam.size()<<std::endl;
+//    std::cout<<density_mesh_seam.HasVertexColors()<< "CP 1 -------"<<std::endl;
+    float min_density_seam = *min_element(densities_seam.begin(), densities_seam.end());
+    float max_density_seam = *max_element(densities_seam.begin(), densities_seam.end());
+
+    std::vector<Eigen::Vector3d> density_based_colors_seam(density_mesh_seam.vertices_.size());
+
+    std::cout<<densities_seam.size()<<std::endl;
+    std::cout<<density_mesh_seam.vertices_.size()<<std::endl;
+    std::cout<<density_based_colors_seam.size()<<std::endl;
+    for(size_t iDensity = 0; iDensity<density_based_colors_seam.size(); iDensity++)
+    {
+        density_based_colors_seam[iDensity][0] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+        density_based_colors_seam[iDensity][1] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+        density_based_colors_seam[iDensity][2] = 0.9;
+    }
+
+    density_mesh_seam.vertex_colors_ = density_based_colors_seam;
+
+    open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh_seam) });
+    open3d::io::WriteTriangleMesh(density_mesh_seam_save_path, density_mesh_seam);
+
+    write_density_to_file(densities_seam, densities_textfile_save_path);
+
+}
+
+void scan_density_heatmap(std::string data_folder_path)
+{
+ std::string composite_normal_path = "/home/pmitra/workspace/density_data/good_scans/41_203_2_1651583400424/cloud_composite_normals.ply";
+ std::string seam_point_cloud_path =  "/home/pmitra/workspace/density_data/good_scans/41_203_2_1651583400424/tf_feature_normals_0.ply";
+
+// std::string composite_normal_path = "/home/pmitra/data/western/253_1676_2_1648845471114/cloud_composite_normals.ply";
+//std::string data_root_path =  "/home/pmitra/workspace/density_data/bad_scans/";
+
+//std::string  data_root_path =  "/home/pmitra/data/valmont/bulk_data/";
+
+//std::string results_root_path = "/home/pmitra/workspace/density_results/bulk_data/";
+//std::string composite_normal_path = data_root_path + data_folder_path + "/cloud_composite_normals.ply";
+//std::string seam_point_cloud_path = data_root_path +  data_folder_path + "/tf_feature_normals_0.ply";
+//std::string density_mesh_seam_save_path =  results_root_path + "density_mesh_seam_" + data_folder_path + ".ply";
+//std::string densities_textfile_save_path = results_root_path + "densities_seam_" + data_folder_path + ".txt";
+std::string density_mesh_seam_save_path =  "/home/pmitra/density_mesh_seam_good.ply";
+std::string densities_textfile_save_path = "/home/pmitra/density_mesh_seam_good.txt";
+
+// poisson reconstruction params
+  double density_threshold = 0.0;
+  size_t depth = 10;
+  double weight = 5;
+  size_t width = 0;
+  double scale = 1.1;
+  bool linear_fit = false;
+
+
+
+  open3d::geometry::PointCloud pcd_hybrid_cloud;
+  open3d::geometry::TriangleMesh mesh_hybrid_cloud;
+
+  open3d::io::ReadPointCloud(composite_normal_path, pcd_hybrid_cloud);
+
+  std::cout << "Meshing..." << std::endl;
+  path_poisson::TriangleMesh meshed_output;
+  path_poisson::MeshOptions mesh_ops;
+  mesh_ops.verbose = false;
+  path_poisson::PointCloud input_poisson_cloud;
+//
+//
+  input_poisson_cloud.points_ = pcd_hybrid_cloud.points_;
+  input_poisson_cloud.normals_ = pcd_hybrid_cloud.normals_;
+//  std::cout << input_poisson_cloud.points_.size() << "  ---  " << input_poisson_cloud.normals_.size() << "\n";
+  auto output_poisson_reconstruction = path_poisson::createPoissonMeshFromPointCloud(input_poisson_cloud, depth, weight, width, scale, linear_fit, mesh_ops);
+//  meshIt(pcd_hybrid_cloud, mesh_hybrid_cloud);
+  meshed_output = std::get<0>(output_poisson_reconstruction);
+  mesh_hybrid_cloud.adjacency_list_ = meshed_output.adjacency_list_;
+  mesh_hybrid_cloud.vertices_ = meshed_output.vertices_;
+  mesh_hybrid_cloud.vertex_normals_ = meshed_output.vertex_normals_;
+  mesh_hybrid_cloud.triangles_ = meshed_output.triangles_;
+  mesh_hybrid_cloud.triangle_normals_ = meshed_output.triangle_normals_;
+//
+  std::cout<<mesh_hybrid_cloud.vertices_.size()<<std::endl;
+//
+  mesh_hybrid_cloud = mesh_hybrid_cloud.ComputeTriangleNormals(false);
+
+//  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(mesh_hybrid_cloud) });
+//
+//
+  auto densities = std::get<1>(output_poisson_reconstruction);
+  //Building KDTree of mesh vertices to extract densities of triangles near the seam
+  /*
+   * Steps:
+   * Keep populating the points in a vector
+   * Remove duplicate points
+   */
+
+  //load seam point_cloud
+  open3d::geometry::PointCloud seam_point_cloud;
+  open3d::io::ReadPointCloud(seam_point_cloud_path, seam_point_cloud);
+
+  auto mesh_hybrid_cloud_scan_kdtree = std::make_shared<open3d::geometry::KDTreeFlann>();
+  std::cout<<"Creating KDTree for hybrid mesh...\n";
+  mesh_hybrid_cloud_scan_kdtree->SetGeometry(mesh_hybrid_cloud);
+  std::cout<<"Done\n";
+
+  std::cout<<seam_point_cloud.points_.size()<<std::endl;
+
+
+  // evaluate along the seam
+  std::vector<int>all_mesh_vertex_indices_nearest_to_seam;
+  for (auto point : seam_point_cloud.points_)
+    {
+
+      // count number of points in the scan
+      std::vector<int> mesh_vertex_indices_nearest_to_point;
+      std::vector<double> mesh_vertex_distances_nearest_to_point;
+      mesh_hybrid_cloud_scan_kdtree->SearchRadius(point, 0.02, mesh_vertex_indices_nearest_to_point, mesh_vertex_distances_nearest_to_point);
+      for(int i = 0; i<mesh_vertex_indices_nearest_to_point.size(); i++)
+      {
+          all_mesh_vertex_indices_nearest_to_seam.push_back(mesh_vertex_indices_nearest_to_point[i]);
+      }
+
+    }
+    // removing duplicates
+    // source : https://stackoverflow.com/questions/1041620/whats-the-most-efficient-way-to-erase-duplicates-and-sort-a-vector
+
+    std::sort(all_mesh_vertex_indices_nearest_to_seam.begin(), all_mesh_vertex_indices_nearest_to_seam.end());
+    all_mesh_vertex_indices_nearest_to_seam.erase( unique( all_mesh_vertex_indices_nearest_to_seam.begin(), all_mesh_vertex_indices_nearest_to_seam.end() ), all_mesh_vertex_indices_nearest_to_seam.end() );
+
+    // checking if any duplicates are present
+    for(int i = 0; i< all_mesh_vertex_indices_nearest_to_seam.size() - 1; i++)
+      {
+          if (all_mesh_vertex_indices_nearest_to_seam[i] == all_mesh_vertex_indices_nearest_to_seam[i+1])
+          {
+              std::cout<<all_mesh_vertex_indices_nearest_to_seam[i]<<std::endl;
+
+          }
+      }
+  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
+
+
+//
+//  std::cout<<all_mesh_vertex_indices_nearest_to_seam.size()<<std::endl;
+
+
+
+
+//  open3d::geometry::TriangleMesh density_mesh_seam;
+//  for(int i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+//    {
+//
+//        density_mesh_seam.vertices_.push_back(mesh_hybrid_cloud.vertices_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//        density_mesh_seam.vertex_normals_.push_back(mesh_hybrid_cloud.vertex_normals_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//        density_mesh_seam.triangles_.push_back(mesh_hybrid_cloud.triangles_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//        density_mesh_seam.triangle_normals_.push_back(mesh_hybrid_cloud.triangle_normals_[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//
+//    }
+//  std::cout<<"pushed density vertices";
+//
+//  std::vector<double>densities_seam;
+//  for(int i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+//  {
+//      densities_seam.push_back(densities[all_mesh_vertex_indices_nearest_to_seam[i]]);
+//  }
+//
+//    float min_density_seam = *min_element(densities_seam.begin(), densities_seam.end());
+//    float max_density_seam = *max_element(densities_seam.begin(), densities_seam.end());
+//
+//    std::vector<Eigen::Vector3d> density_based_colors_seam(density_mesh_seam.vertices_.size());
+//    for(auto iDensity = 0; iDensity<densities_seam.size(); iDensity++)
+//    {
+//        density_based_colors_seam[iDensity][0] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+//        density_based_colors_seam[iDensity][1] = ((densities_seam[iDensity] - min_density_seam)/(max_density_seam - min_density_seam));
+//        density_based_colors_seam[iDensity][2] = 0.9;
+//        //std::cout<<density_based_colors[iDensity][0]<<std::endl;
+//    }
+//    density_mesh_seam.vertex_colors_ = density_based_colors_seam;
+//  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh) });
+//    open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh_seam.ply", density_mesh_seam);
+
+
+/*
+   * Steps:
+   * 1) Create a TriangleMesh
+   * 2) Fetch densities of points only near the seam
+   * 3) Create density based colors only of these mesh vertices
+   * 4) Bin these densities
+   * 5) Repeat steps 1-4 for a good and a bad seam
+   */
+
+    open3d::geometry::TriangleMesh density_mesh_seam(mesh_hybrid_cloud);
+    std::vector<bool> non_seam_mask(mesh_hybrid_cloud.vertices_.size(), true);
+    for (size_t i = 0; i < all_mesh_vertex_indices_nearest_to_seam.size(); i++)
+    {
+        non_seam_mask[all_mesh_vertex_indices_nearest_to_seam[i]] = false ;
+    }
+
+    density_mesh_seam.RemoveVerticesByMask(non_seam_mask);
+    std::cout<<density_mesh_seam.vertices_.size()<<std::endl;
+
+//    std::cout<<density_mesh_seam.HasVertexColors()<< "CP 0 -------"<<std::endl;
+    std::cout<<"vertices removed"<<std::endl;
       std::vector<double>densities_seam;
   for(size_t i = 0; i<all_mesh_vertex_indices_nearest_to_seam.size(); i++)
   {
@@ -562,29 +783,127 @@ void scan_density_heatmap()
 
     density_mesh_seam.vertex_colors_ = density_based_colors_seam;
 
-  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh_seam) });
-  open3d::io::WriteTriangleMesh("/home/pmitra/density_mesh_seam.ply", density_mesh_seam);
+//  open3d::visualization::DrawGeometries({ std::make_shared<open3d::geometry::TriangleMesh>(density_mesh_seam) });
+  open3d::io::WriteTriangleMesh(density_mesh_seam_save_path, density_mesh_seam);
 
-    write_density_to_file(densities_seam);
+  write_density_to_file(densities_seam, densities_textfile_save_path);
 
 }
 
+void scan_density_heatmap_loop(std::vector<std::string> dataset_names)
+{
+/*
+ Steps:
+ 1) List all dataset names in a folder
+ 2) Push to a vector of strings
+ 3) Fetch each element of the vector
+ 4) Pass to scan_density_heatmap()
 
+ */
+    std::cout<<"Processing datasets..:"<<dataset_names.size()<<std::endl;
+
+  for(int i = 0; i<dataset_names.size(); i++)
+  {
+      std::cout<<dataset_names[i]<<std::endl;
+      scan_density_heatmap(dataset_names[i]);
+  }
+
+}
+
+void create_low_density_point_clouds(std::string cloud_composite_normal_path, std::string seam_point_cloud_path)
+{
+    /**
+     * Steps:
+     * Load a good mesh (one with high density of points)
+     * Search around the seam with a fixed radius to collect points around the seam
+     * Do a RemoveVerticesbyMask() of the above points from the original point cloud - call this point_cloud_with_hole
+     * Collect these points and initialize it to an empty point cloud - call this cropped_point_cloud
+     * Do a voxel downsampling of croppped_point_cloud
+     * low_density_point_cloud = point_cloud_with_hole + cropped_point_cloud
+     */
+
+    //Load a good mesh
+    open3d::geometry::PointCloud pcd_good_scan;
+    open3d::io::ReadPointCloud(cloud_composite_normal_path, pcd_good_scan);
+    std::cout<<pcd_good_scan.points_.size()<<"\n";
+
+//    open3d::geometry::TriangleMesh mesh_good_scan;
+
+    // Search around the seam with a fixed radius to collect points around the seam
+    // load seam point_cloud
+    open3d::geometry::PointCloud seam_point_cloud;
+    open3d::io::ReadPointCloud(seam_point_cloud_path, seam_point_cloud);
+
+    auto pcd_good_scan_kdtree = std::make_shared<open3d::geometry::KDTreeFlann>();
+    std::cout<<"Creating KDTree for hybrid mesh...\n";
+    pcd_good_scan_kdtree->SetGeometry(pcd_good_scan);
+    std::cout<<"Done\n";
+
+
+    // evaluate along the seam
+    std::vector<size_t>all_pcd_vertex_indices_nearest_to_seam;
+    for (auto point : seam_point_cloud.points_)
+    {
+
+        // count number of points in the scan
+        std::vector<int> pcd_vertex_indices_nearest_to_point;
+        std::vector<double> pcd_vertex_distances_nearest_to_point;
+        pcd_good_scan_kdtree->SearchRadius(point, 0.02, pcd_vertex_indices_nearest_to_point, pcd_vertex_distances_nearest_to_point);
+        for(size_t i = 0; i<pcd_vertex_indices_nearest_to_point.size(); i++)
+        {
+            all_pcd_vertex_indices_nearest_to_seam.push_back(pcd_vertex_indices_nearest_to_point[i]);
+        }
+
+    }
+    // removing duplicates
+    // source : https://stackoverflow.com/questions/1041620/whats-the-most-efficient-way-to-erase-duplicates-and-sort-a-vector
+
+    std::sort(all_pcd_vertex_indices_nearest_to_seam.begin(), all_pcd_vertex_indices_nearest_to_seam.end());
+    all_pcd_vertex_indices_nearest_to_seam.erase( unique( all_pcd_vertex_indices_nearest_to_seam.begin(), all_pcd_vertex_indices_nearest_to_seam.end() ), all_pcd_vertex_indices_nearest_to_seam.end() );
+
+    // checking if any duplicates are present
+    for(size_t i = 0; i< all_pcd_vertex_indices_nearest_to_seam.size() - 1; i++)
+    {
+        if (all_pcd_vertex_indices_nearest_to_seam[i] == all_pcd_vertex_indices_nearest_to_seam[i+1])
+        {
+            std::cout<<all_pcd_vertex_indices_nearest_to_seam[i]<<std::endl;
+
+        }
+    }
+    std::cout<<all_pcd_vertex_indices_nearest_to_seam.size()<<std::endl;
+
+//    open3d::geometry::PointCloud cropped_point_cloud;
+//    auto cropped_point_cloud_pointer = std::make_shared<open3d::geometry::PointCloud>(cropped_point_cloud);
+//    auto pcd_good_scan_pointer = std::make_shared<open3d::geometry::PointCloud>(pcd_good_scan);
+
+    auto cropped_seam_point_cloud_pointer = pcd_good_scan.SelectDownSample(all_pcd_vertex_indices_nearest_to_seam);
+    open3d::io::WritePointCloud("/home/pmitra/just_seam_points.ply", *cropped_seam_point_cloud_pointer);
+    std::cout<<cropped_seam_point_cloud_pointer->points_.size()<<"\n";
+
+
+    auto downsampled_cropped_seam_point_cloud_pointer = cropped_seam_point_cloud_pointer->VoxelDownSample(0.003);
+    open3d::io::WritePointCloud("/home/pmitra/downsampled.ply", *downsampled_cropped_seam_point_cloud_pointer);
+
+    auto point_cloud_without_seam = pcd_good_scan.SelectDownSample(all_pcd_vertex_indices_nearest_to_seam, true);
+    open3d::io::WritePointCloud("/home/pmitra/without_seam_points.ply", *point_cloud_without_seam);
+    std::cout<<point_cloud_without_seam->points_.size()<<"\n";
+
+    auto low_density_point_cloud = *downsampled_cropped_seam_point_cloud_pointer + *point_cloud_without_seam;
+    open3d::io::WritePointCloud("/home/pmitra/low_density_point_cloud.ply", low_density_point_cloud);
+
+}
 int main(int argc, char** argv)
 {
-//    open3d::geometry::PointCloud scan_cloud;
-//    open3d::io::ReadPointCloud("/home/pmitra/100_1282_2_1645371185020/cloud_composite_normals.ply", scan_cloud);
-//
-//    open3d::visualization::DrawGeometries({std::make_shared<open3d::geometry::PointCloud>(scan_cloud)});
 
-//    open3d::geometry::PointCloud scan_cloud;
-//    open3d::geometry::TriangleMesh triangle_mesh;
-//    open3d::io::ReadPointCloud("/home/pmitra/100_1282_2_1645371185020/cloud_composite_normals.ply", scan_cloud);
-//    meshIt(scan_cloud, triangle_mesh);
-//    std::cout<<"meshed it"<<std::endl;
-//    open3d::visualization::DrawGeometries({std::make_shared<open3d::geometry::TriangleMesh>(triangle_mesh)});
+//      scan_density_heatmap();
 
-      scan_density_heatmap();
+//   std::vector<std::string> dataset_names = {"32_164_2_1651102426747", "14_125_2_1650751255276", "17_138_2_1650762128484", "119_440_2_1654200602795", "41_200_2_1651519784634", "100_1293_2_1645472303462", "126_1537_2_1647448143837", "21_153_2_1650921250169", "133_484_2_1654783343712", "100_424_2_1654093694420", "106_427_2_1654104316596", "126_1536_2_1647447300179", "37_177_2_1651250036542", "103_1286_2_1645386899290", "111_434_2_1654183494281", "133_485_2_1654790152363", "35_173_2_1651177962783", "123_1385_2_1645767066044", "119_1332_2_1645665542075", "125_448_2_1654288755546", "132_465_2_1654610403045", "133_473_2_1654694341514", "121_1373_2_1645753841371", "34_170_2_1651169342585", "152_537_2_1655327662782", "120_442_2_1654209228970", "114_435_2_1654188453105", "109_1295_2_1645484936228", "133_479_2_1654719652773", "132_467_2_1654616718525", "30_157_2_1651014006148", "27_155_2_1650939358146", "33_412_2_1637697176316", "115_1323_2_1645653916113", "115_1336_2_1645670525515", "34_169_2_1651165533495", "133_482_2_1654738480824",  "133_475_2_1654704359620", "14_141_2_1650814667642", "102_422_2_1654083712815", "34_171_2_1651172021259", "115_1316_2_1645601671594", "33_219_2_1651844796076", "35_194_2_1651505090715", "3_44_2_1635464027141", "124_446_2_1654280872834", "123_1384_2_1645766060903", "130_459_2_1654546984467", "35_192_2_1651498177882", "100_1282_2_1645371185020", "3_38_2_1635462997523", "115_1322_2_1645638040851", "119_1333_2_1645666089307", "136_1676_2_1648069922332", "119_1328_2_1645663502625", "121_1388_2_1645775029292", "122_1376_2_1645755104617", "41_204_2_1651589492885", "104_1287_2_1645395063800", "132_469_2_1654622462426", "120_1369_2_1645742514344", "155_545_2_1655424897923", "3_51_2_1635466299317", "119_1334_2_1645666714530", "111_1303_2_1645555872951", "132_472_2_1654633805709", "130_1662_2_1647892198312", "132_468_2_1654619149021", "121_1372_2_1645753222470", "41_202_2_1651526755533", "131_457_2_1654538098335",  "126_1542_2_1647454415088", "132_471_2_1654630673613", "133_486_2_1654795073021", "133_474_2_1654699607633", "39_459_2_1638809412930", "104_425_2_1654097071410", "38_185_2_1651273730923", "41_203_2_1651583400424", "39_458_2_1638804660218", "120_441_2_1654204924028", "41_205_2_1651594879216", "126_1656_2_1647810032012", "110_1301_2_1645542662381", "121_1387_2_1645773344818", "133_483_2_1654779982666", "25_150_2_1650855911220", "130_458_2_1654541821716", "105_426_2_1654100680366", "19_432_2_1638403658063", "39_195_2_1651511795176", "154_542_2_1655388895452", "21_148_2_1650850844253", "3_30_2_1635454531169", "109_431_2_1654123875884", "18_142_2_1650824895103", "133_478_2_1654716349277", "11_115_2_1650730475437", "109_443_2_1654216331780", "120_1339_2_1645712022564", "133_476_2_1654708001397", "130_1661_2_1647878994333", "133_480_2_1654726058154", "115_1313_2_1645592453586", "119_1330_2_1645664427375", "122_444_2_1654265779776", "123_1383_2_1645765648153", "103_445_2_1654270703712", "132_470_2_1654627083500", "33_167_2_1651160257906", "126_452_2_1654519100144", "129_455_2_1654529702489", "155_544_2_1655408158599", "111_1308_2_1645577604721", "19_428_2_1638387805631", "121_1381_2_1645765176140", "103_423_2_1654088407479", "126_1532_2_1647444555310", "14_139_2_1650812607537", "121_1390_2_1645803905460", "33_168_2_1651162896446", "121_1380_2_1645764845467", "119_1329_2_1645663912062", "128_454_2_1654526235268", "3_36_2_1635462684929", "126_1533_2_1647445144116", "11_210_2_1636066321276", "119_1331_2_1645664985280", "32_165_2_1651154800523", "119_1391_2_1645820632802", "152_539_2_1655382347311",  "30_163_2_1651095610058", "19_629_2_1639577102772", "3_46_2_1635464620533", "39_196_2_1651516093488", "14_126_2_1650751958525", "130_456_2_1654533818773", "30_166_2_1651157409469", "3_381_2_1637334834034", "121_1379_2_1645764243255", "40_187_2_1651331750827", "35_193_2_1651502753799"};
+//   scan_density_heatmap_loop(dataset_names);
 
+    std::string composite_normal_path = "/home/pmitra/workspace/density_data/good_scans/41_203_2_1651583400424/cloud_composite_normals.ply";
+    std::string seam_point_cloud_path =  "/home/pmitra/workspace/density_data/good_scans/41_203_2_1651583400424/tf_feature_normals_0.ply";
+
+//    create_low_density_point_clouds(composite_normal_path, seam_point_cloud_path);
+    scan_density_heatmap("garbage_value/");
 
 }
