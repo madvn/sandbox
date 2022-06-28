@@ -810,7 +810,90 @@ void scan_density_heatmap_loop(std::vector<std::string> dataset_names)
 
 }
 
-void create_low_density_point_clouds(std::string cloud_composite_normal_path, std::string seam_point_cloud_path)
+void create_low_density_point_clouds_voxel_downsampled_seam_whole(std::string cloud_composite_normal_path, std::string seam_point_cloud_path)
+{
+    /**
+     * Steps:
+     * Load a good mesh (one with high density of points)
+     * Search around the seam with a fixed radius to collect points around the seam
+     * Do a RemoveVerticesbyMask() of the above points from the original point cloud - call this point_cloud_with_hole
+     * Collect these points and initialize it to an empty point cloud - call this cropped_point_cloud
+     * Do a voxel downsampling of croppped_point_cloud
+     * low_density_point_cloud = point_cloud_with_hole + cropped_point_cloud
+     */
+
+    //Load a good mesh
+    open3d::geometry::PointCloud pcd_good_scan;
+    open3d::io::ReadPointCloud(cloud_composite_normal_path, pcd_good_scan);
+    std::cout<<pcd_good_scan.points_.size()<<"\n";
+
+//    open3d::geometry::TriangleMesh mesh_good_scan;
+
+    // Search around the seam with a fixed radius to collect points around the seam
+    // load seam point_cloud
+    open3d::geometry::PointCloud seam_point_cloud;
+    open3d::io::ReadPointCloud(seam_point_cloud_path, seam_point_cloud);
+
+    auto pcd_good_scan_kdtree = std::make_shared<open3d::geometry::KDTreeFlann>();
+    std::cout<<"Creating KDTree for hybrid mesh...\n";
+    pcd_good_scan_kdtree->SetGeometry(pcd_good_scan);
+    std::cout<<"Done\n";
+
+
+    // evaluate along the seam
+    std::vector<size_t>all_pcd_vertex_indices_nearest_to_seam;
+    for (auto point : seam_point_cloud.points_)
+    {
+
+        // count number of points in the scan
+        std::vector<int> pcd_vertex_indices_nearest_to_point;
+        std::vector<double> pcd_vertex_distances_nearest_to_point;
+        pcd_good_scan_kdtree->SearchRadius(point, 0.02, pcd_vertex_indices_nearest_to_point, pcd_vertex_distances_nearest_to_point);
+        for(size_t i = 0; i<pcd_vertex_indices_nearest_to_point.size(); i++)
+        {
+            all_pcd_vertex_indices_nearest_to_seam.push_back(pcd_vertex_indices_nearest_to_point[i]);
+        }
+
+    }
+    // removing duplicates
+    // source : https://stackoverflow.com/questions/1041620/whats-the-most-efficient-way-to-erase-duplicates-and-sort-a-vector
+
+    std::sort(all_pcd_vertex_indices_nearest_to_seam.begin(), all_pcd_vertex_indices_nearest_to_seam.end());
+    all_pcd_vertex_indices_nearest_to_seam.erase( unique( all_pcd_vertex_indices_nearest_to_seam.begin(), all_pcd_vertex_indices_nearest_to_seam.end() ), all_pcd_vertex_indices_nearest_to_seam.end() );
+
+    // checking if any duplicates are present
+    for(size_t i = 0; i< all_pcd_vertex_indices_nearest_to_seam.size() - 1; i++)
+    {
+        if (all_pcd_vertex_indices_nearest_to_seam[i] == all_pcd_vertex_indices_nearest_to_seam[i+1])
+        {
+            std::cout<<all_pcd_vertex_indices_nearest_to_seam[i]<<std::endl;
+
+        }
+    }
+    std::cout<<all_pcd_vertex_indices_nearest_to_seam.size()<<std::endl;
+
+//    open3d::geometry::PointCloud cropped_point_cloud;
+//    auto cropped_point_cloud_pointer = std::make_shared<open3d::geometry::PointCloud>(cropped_point_cloud);
+//    auto pcd_good_scan_pointer = std::make_shared<open3d::geometry::PointCloud>(pcd_good_scan);
+
+    auto cropped_seam_point_cloud_pointer = pcd_good_scan.SelectDownSample(all_pcd_vertex_indices_nearest_to_seam);
+    open3d::io::WritePointCloud("/home/pmitra/just_seam_points.ply", *cropped_seam_point_cloud_pointer);
+    std::cout<<cropped_seam_point_cloud_pointer->points_.size()<<"\n";
+
+
+    auto downsampled_cropped_seam_point_cloud_pointer = cropped_seam_point_cloud_pointer->VoxelDownSample(0.003);
+    open3d::io::WritePointCloud("/home/pmitra/downsampled.ply", *downsampled_cropped_seam_point_cloud_pointer);
+
+    auto point_cloud_without_seam = pcd_good_scan.SelectDownSample(all_pcd_vertex_indices_nearest_to_seam, true);
+    open3d::io::WritePointCloud("/home/pmitra/without_seam_points.ply", *point_cloud_without_seam);
+    std::cout<<point_cloud_without_seam->points_.size()<<"\n";
+
+    auto low_density_point_cloud = *downsampled_cropped_seam_point_cloud_pointer + *point_cloud_without_seam;
+    open3d::io::WritePointCloud("/home/pmitra/low_density_point_cloud.ply", low_density_point_cloud);
+
+}
+
+void create_low_density_point_clouds_voxel_downsampled_seam_patches(std::string cloud_composite_normal_path, std::string seam_point_cloud_path)
 {
     /**
      * Steps:
@@ -903,7 +986,7 @@ int main(int argc, char** argv)
     std::string composite_normal_path = "/home/pmitra/workspace/density_data/good_scans/41_203_2_1651583400424/cloud_composite_normals.ply";
     std::string seam_point_cloud_path =  "/home/pmitra/workspace/density_data/good_scans/41_203_2_1651583400424/tf_feature_normals_0.ply";
 
-//    create_low_density_point_clouds(composite_normal_path, seam_point_cloud_path);
+//    create_low_density_point_clouds_voxel_downsampled_seam_whole(composite_normal_path, seam_point_cloud_path);
     scan_density_heatmap("garbage_value/");
 
 }
